@@ -10,28 +10,53 @@ It answers the grower's three questions:
 2. How does that compare to past years?
 3. How much should I expect in the next week or two?
 
-## Run it (Mac, Windows or Linux)
+## Run it in VS Code (Mac, Windows or Linux)
 
-You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) and Git.
+You need [Python 3.12](https://www.python.org/downloads/), [VS Code](https://code.visualstudio.com/) with the **Python** extension, and Git.
+
+**One-time setup:**
 
 ```bash
-git clone <this repo>
+git clone https://github.com/ada-lsw/chill-at-my-orchard
 cd chill-at-my-orchard
-cp .env.example .env          # Windows PowerShell: copy .env.example .env
-docker compose up --build
+python -m venv .venv
+```
+
+Activate the environment, then install both sets of libraries:
+
+```bash
+# Mac / Linux
+source .venv/bin/activate
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+pip install -r backend/requirements.txt -r frontend/requirements.txt
+```
+
+In VS Code: open the `chill-at-my-orchard` folder, then Command Palette → **Python: Select Interpreter** → pick `.venv`.
+
+**The key:** copy `.env.example` to `.env` in the repo root and fill it in. `.env` is git-ignored; never commit it.
+
+```
+DATA_SOURCE=cimis
+CIMIS_APP_KEY=your-key-here
+```
+
+Leave `DATA_SOURCE=synthetic` to work offline with fake data.
+
+**Run:** Run and Debug panel (Ctrl/Cmd+Shift+D) → **Backend + Frontend** → play. Or in two terminals:
+
+```bash
+cd backend && uvicorn app.main:app --reload
+cd frontend && streamlit run app.py
 ```
 
 - App: http://localhost:8501
 - API docs: http://localhost:8000/docs
 
-It starts with **synthetic data**, so it works with no CIMIS key and no internet. To use real data, put the team's key in `.env` and set `DATA_SOURCE=cimis`.
+**Tests:** `cd backend && python -m pytest -q`
 
-### Without Docker
-
-```bash
-cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
-cd frontend && pip install -r requirements.txt && streamlit run app.py
-```
+Docker files are kept in the repo as an optional alternative (`docker compose up --build`), but the team runs without it.
 
 ## How it's built
 

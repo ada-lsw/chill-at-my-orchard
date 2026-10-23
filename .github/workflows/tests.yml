@@ -13,8 +13,3 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: DATA_SOURCE=synthetic DATA_DIR=/tmp/data python -m pytest -q
-  docker:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: cp .env.example .env && docker compose build

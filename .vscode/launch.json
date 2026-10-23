@@ -1,0 +1,27 @@
+{
+  // Run and Debug panel (Ctrl/Cmd+Shift+D) -> pick "Backend + Frontend" -> press play.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend (API)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--reload", "--port", "8000"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Frontend (app)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "streamlit",
+      "args": ["run", "app.py", "--server.port", "8501"],
+      "cwd": "${workspaceFolder}/frontend",
+      "env": { "BACKEND_URL": "http://localhost:8000" }
+    }
+  ],
+  "compounds": [
+    { "name": "Backend + Frontend", "configurations": ["Backend (API)", "Frontend (app)"] }
+  ]
+}

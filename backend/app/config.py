@@ -2,7 +2,13 @@
 import os
 from pathlib import Path
 
-# Where cached station data lives. Mounted as a Docker volume so it survives rebuilds.
+from dotenv import load_dotenv
+
+# Load the repo-root .env (CIMIS key, data source). Real environment variables win.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(REPO_ROOT / ".env", override=False)
+
+# Where cached station data lives (repo-root data/ folder by default).
 DATA_DIR = Path(os.getenv("DATA_DIR", Path(__file__).resolve().parents[2] / "data"))
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,4 @@
+# Same line endings on Mac, Windows and Linux, so Docker builds behave the same everywhere
+* text=auto eol=lf
+*.parquet binary
+*.png binary

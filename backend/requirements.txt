@@ -1,0 +1,8 @@
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+pandas==2.2.*
+numpy==2.1.*
+pyarrow==18.*
+requests==2.32.*
+pytest==8.*
+httpx==0.27.*

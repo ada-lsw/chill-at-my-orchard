@@ -14,16 +14,19 @@ CIMIS_APP_KEY = os.getenv("CIMIS_APP_KEY", "")
 
 TIMEZONE = "America/Los_Angeles"
 
-# Chill season: counting starts Nov 1 (month, day). Say this in the UI and the pitch.
-CHILL_START = (11, 1)
-# Chill hours window, °F
-CHILL_HOURS_LOW_F = 32.0
-CHILL_HOURS_HIGH_F = 45.0
+# Chill season start (month, day). FNRIC's season starts Sept 1; many growers count
+# from Nov 1. We use Nov 1 for growers; set (9, 1) to match FNRIC's chill calculator.
+CHILL_START = (int(os.getenv("CHILL_START_MONTH", 11)), 1)
 
-# GDD: season start and base temperature by crop, °F.
-# OPEN QUESTION: confirm crop base temperatures with FNRIC before the demo.
-GDD_START = (3, 1)
-GDD_BASE_F = {"almond": 50.0, "walnut": 50.0, "pistachio": 45.0, "prune": 41.0}
+# Default "hours in a range" the grower sees; they can change it in the app.
+CUSTOM_RANGE_F = (32.0, 45.0)
+
+# GDD counts from bloom (FNRIC's almond hull split model counts from full bloom date).
+# ASSUMPTION: Feb 20 as a typical almond bloom date. Ask FNRIC; let growers enter their own.
+GDD_START = (2, 20)
+# Single-sine thresholds in °C (lower, upper). FNRIC: 5°C (41°F) and 35°C (95°F).
+GDD_THRESHOLDS_C = {"almond": (5.0, 35.0), "walnut": (5.0, 35.0),
+                    "pistachio": (5.0, 35.0), "prune": (5.0, 35.0)}  # TODO: confirm non-almond crops
 
 # Interpolation
 NEIGHBORS = int(os.getenv("NEIGHBORS", 5))      # stations used for each estimate

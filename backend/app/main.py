@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, Query
 from . import chill, config, data, forecast, interp, seasons
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
-METRICS = ("chill_portions", "chill_hours", "utah_units")
+METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
 
 
 # ---------------------------------------------------------------- helpers
@@ -77,6 +77,8 @@ def estimate(
     crop: str = "almond",
     exclude: list[str] = Query(default=[]),
     history_seasons: int = 10,
+    range_low_f: float = config.CUSTOM_RANGE_F[0],
+    range_high_f: float = config.CUSTOM_RANGE_F[1],
 ):
     elev = interp.elevation_m(lat, lon)
     elev_source = "open-meteo"
@@ -91,11 +93,14 @@ def estimate(
     if est.dropna().empty:
         raise HTTPException(404, "No station data near this point for this season")
     est = clip(est, c_start, c_end)
-    so_far = chill.summarize(est, crop)
+    so_far = chill.summarize(est, crop, custom_range=(range_low_f, range_high_f))
 
-    g_start, g_end = seasons.gdd_window(as_of)
-    g_est, _ = estimate_at(lat, lon, elev, g_start, g_end, exclude)
-    gdd = chill.summarize(clip(g_est, g_start, g_end), crop)
+    g_start, g_end, g_started = seasons.gdd_window(as_of)
+    if g_started:
+        g_est, _ = estimate_at(lat, lon, elev, g_start, g_end, exclude)
+        gdd = chill.summarize(clip(g_est, g_start, g_end), crop)
+    else:
+        gdd = chill.summarize(pd.Series(dtype=float, index=pd.DatetimeIndex([])), crop)
 
     # 2. Past years: same window, shifted back; extend 14 days for the climatology projection
     history = []
@@ -149,9 +154,10 @@ def estimate(
         "chill": {"start": str(c_start), "end": str(c_end), "season_complete": complete,
                   **{m: round(so_far[m], 1) for m in METRICS},
                   "hours_counted": so_far["hours_counted"], "hours_missing": so_far["hours_missing"],
+                  "custom_range": so_far["custom_range"],
                   "curve": daily_curve(est)},
-        "gdd": {"start": str(g_start), "end": str(g_end), "total": round(gdd["gdd"], 1),
-                "base_f": gdd["gdd_base_f"]},
+        "gdd": {"start": str(g_start), "end": str(g_end), "started": g_started, "total_c_days": round(gdd["gdd"], 1),
+                "method": "single sine", "thresholds_c": gdd["gdd_thresholds_c"]},
         "history": {"seasons": history, "percentiles": pct},
         "projection": projection,
         "neighbors": neigh[["station_id", "name", "dist_km", "elev_m"]].round(1).to_dict("records"),

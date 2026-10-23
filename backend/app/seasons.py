@@ -22,12 +22,11 @@ def chill_window(as_of: date) -> tuple[date, date, bool]:
     return start, min(as_of, season_end), as_of > season_end
 
 
-def gdd_window(as_of: date) -> tuple[date, date]:
+def gdd_window(as_of: date) -> tuple[date, date, bool]:
+    """(start, end, started). GDD counts from bloom; before this year's bloom it hasn't started."""
     m, d = config.GDD_START
     start = date(as_of.year, m, d)
-    if as_of < start:
-        start = date(as_of.year - 1, m, d)
-    return start, as_of
+    return start, as_of, as_of >= start
 
 
 def same_window_in(year_offset: int, start: date, end: date) -> tuple[date, date]:

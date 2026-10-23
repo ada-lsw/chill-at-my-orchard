@@ -31,3 +31,17 @@ def test_validate_durham():
     v = r.json()["with_elevation_adjustment"]
     assert v["hours_compared"] > 1000
     assert "chill_portions" in v["error"]
+
+
+def test_gdd_not_started_before_bloom():
+    r = client.get("/estimate", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01",
+                                       "exclude": ["12"], "history_seasons": 1})
+    g = r.json()["gdd"]
+    assert g["started"] is False and g["total_c_days"] == 0
+
+
+def test_gdd_after_bloom():
+    r = client.get("/estimate", params={"lat": 38.54, "lon": -121.78, "as_of": "2026-05-01",
+                                       "history_seasons": 1})
+    g = r.json()["gdd"]
+    assert g["started"] is True and g["total_c_days"] > 0

@@ -1,0 +1,27 @@
+{
+  "name": "Chill at My Orchard",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": { "cpus": 2 },
+  "postCreateCommand": "pip install --upgrade pip && pip install -r backend/requirements.txt -r frontend/requirements.txt && [ -f .env ] || cp .env.example .env",
+  "forwardPorts": [8000, 8501],
+  "portsAttributes": {
+    "8000": { "label": "Backend API" },
+    "8501": { "label": "Streamlit app", "onAutoForward": "openPreview" }
+  },
+  "secrets": {
+    "CIMIS_APP_KEY": {
+      "description": "Team CIMIS Web API app key (from your cimis.water.ca.gov account page). Needed only when DATA_SOURCE=cimis."
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-vsliveshare.vsliveshare"
+      ]
+    }
+  }
+}

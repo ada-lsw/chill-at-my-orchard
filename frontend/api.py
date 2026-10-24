@@ -17,7 +17,7 @@ from pathlib import Path
 import requests
 import streamlit as st
 
-API = os.getenv("BACKEND_URL")                       # unset or empty: one-app mode
+API = (os.getenv("BACKEND_URL") or "").rstrip("/")   # unset or empty: one-app mode; no "//" if it ends in "/"
 BACKEND_DIR = Path(__file__).resolve().parents[1] / "backend"
 
 
@@ -47,7 +47,9 @@ def get(path: str, **params):
         r = _backend().get(path, params=params)
     if 400 <= getattr(r, "status_code", 200) < 500:
         # The backend explains in plain words (e.g. no station data near this spot); show that, not a traceback.
-        st.info(r.json().get("detail", "This spot can't be shown yet."))
+        detail = r.json().get("detail")
+        # A plain sentence is shown as is; anything else (e.g. a 422's list of field errors) gets a friendly line.
+        st.info(detail if isinstance(detail, str) else "This spot can't be shown yet.")
         st.stop()
     r.raise_for_status()
     return r.json()

@@ -41,19 +41,30 @@ def _measures(est: dict):
     """Chill, heat and data-quality numbers, each with its explanation as a tooltip."""
     ch, g = est["chill"], est["gdd"]
     st.caption(f"Counting since {_day(ch['start'])}", help=help_for("chill_start"))
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Chill portions", f"{ch['chill_portions']:.1f}", help=help_for("chill_portions"))
-    m2.metric("Chill hours (32-45°F)", f"{ch['chill_hours']:.0f}", help=help_for("chill_hours"))
-    m3.metric("Hours at or below 45°F", f"{ch['hours_lt_45']:.0f}", help=help_for("hours_lt_45"))
-    m4.metric("Utah chill units", f"{ch['utah_units']:.0f}", help=help_for("utah_units"))
-
     lo, hi = g["thresholds_c"]
-    m5, m6, m7, m8 = st.columns(4)
-    m5.metric(f"GDD since {_day(g['start'])} ({lo:g}-{hi:g}°C)",
-              f"{g['total_c_days']:.0f}" if g["started"] else "Not yet", help=help_for("gdd"))
-    m6.metric("Hours missing", f"{ch['hours_missing']}", help=help_for("hours_missing"))
-    m7.metric("Nearby stations used", f"{len(est['neighbors'])}", help=help_for("neighbors"))
-    m8.metric("Orchard elevation", f"{est['location']['elev_m'] * FEET_PER_METER:,.0f} ft", help=help_for("elevation"))
+    warmth = f"{g['total_c_days']:.0f} °C-days" if g["started"] else "Not yet"
+    _metric_rows([
+        ("Chill portions", f"{ch['chill_portions']:.1f}", help_for("chill_portions")),
+        ("Chill hours (32-45°F)", f"{ch['chill_hours']:.0f}", help_for("chill_hours")),
+        ("Hours at or below 45°F", f"{ch['hours_lt_45']:.0f}", help_for("hours_lt_45")),
+        ("Utah chill units", f"{ch['utah_units']:.0f}", help_for("utah_units")),
+        (f"Warmth (GDD) since {_day(g['start'])}, {_c_to_f(lo):.0f}-{_c_to_f(hi):.0f}°F", warmth, help_for("gdd")),
+        ("Hours missing", f"{ch['hours_missing']}", help_for("hours_missing")),
+        ("Nearby stations used", f"{len(est['neighbors'])}", help_for("neighbors")),
+        ("Orchard elevation", f"{est['location']['elev_m'] * FEET_PER_METER:,.0f} ft", help_for("elevation")),
+    ])
+
+
+def _c_to_f(c: float) -> float:
+    """Convert a temperature from °C to °F, for display only."""
+    return c * 9 / 5 + 32
+
+
+def _metric_rows(items: list[tuple], per_row: int = 2):
+    """Show (label, value, tooltip) metrics two per row, so labels stay readable on a phone."""
+    for i in range(0, len(items), per_row):
+        for col, (label, value, tip) in zip(st.columns(per_row), items[i:i + per_row]):
+            col.metric(label, value, help=tip)
 
 
 def _custom_range(r: dict):

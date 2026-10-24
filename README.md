@@ -69,6 +69,9 @@ The frontend can reach the backend two ways (`frontend/api.py`):
   edits show only after restarting Streamlit, and both requirement files must be installed.
 
 Steps on [share.streamlit.io](https://share.streamlit.io):
+0. **Before deploying, the demo's saved data must be in the repo.** `data/cache/` is git-ignored, so a fresh deploy has
+   no saved data, and both demo buttons show an error. Which files to commit (about 9 to 14 MB), or whether to download
+   on first use instead, is a team decision (see the deploy-prep PR).
 1. **Create app** from the GitHub repo `ada-lsw/chill-at-my-orchard`, branch `main`, main file `frontend/app.py`.
 2. **Advanced settings:** Python 3.12. **Secrets**, at the top level (not under a `[section]`), so Streamlit puts them
    in the environment where `backend/app/config.py` reads them:
@@ -77,7 +80,7 @@ Steps on [share.streamlit.io](https://share.streamlit.io):
    ```
    **No CIMIS key for now.** With a key, a pin dropped outside the saved data makes dozens of CIMIS requests in a row
    (about 90 for one pin near Fresno), and Cloud's disk is wiped when the app sleeps, so they repeat. Without the key,
-   the demos run from the saved files, and other pins use whatever is saved. Add `CIMIS_APP_KEY` only after the
+   the demos run from the files committed in step 0, and other pins use whatever is saved. Add `CIMIS_APP_KEY` only after the
    neighbor walk is capped (the team decides); never put the key anywhere else.
 3. Community Cloud installs the requirements file next to the main file (`frontend/requirements.txt`) **instead of**
    the repo root's, so that file must also pull in the backend's packages with the line `-r ../backend/requirements.txt`.

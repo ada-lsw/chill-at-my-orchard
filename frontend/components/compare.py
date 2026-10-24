@@ -8,11 +8,9 @@ import streamlit as st
 def show(est: dict):
     ch, hist, proj = est["chill"], est["history"], est["projection"]
     p = hist["percentiles"].get("chill_portions", {})
-    cp, target = ch["chill_portions"], est["target"]["target_cp"]
-    a1, a2, a3 = st.columns(3)
-    so_far = f"Target reached ({cp:.0f} of {target:.0f})" if cp >= target else f"{cp:.0f} of {target:.0f} needed"
-    a1.metric("Chill so far", so_far,
-              help=f"Chill portions counted since {ch['start']}. Your {est['target']['variety']} trees need {target:.0f}.")
+    # "Chill so far" lives on the glance card above; repeating it here in other words confused readers.
+    cp = ch["chill_portions"]
+    a2, a3 = st.columns(2)
     if p:
         a2.metric("Compared with a typical year", vs_typical(cp - p["p50"]),
                   help=f"A typical year has {p['p50']:.0f} by this date.")

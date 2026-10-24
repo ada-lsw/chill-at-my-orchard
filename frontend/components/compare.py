@@ -20,16 +20,28 @@ def show(est: dict):
         a2.metric("Compared with a typical year", vs_typical(cp - p["p50"]),
                   help=f"This winter: {cp:.0f} chill portions. A typical year has {p['p50']:.0f} "
                        f"by this date. Both counted since {started}.")
+    source = outlook_source(proj)
     if "added" in proj:
         a3.metric("Next 14 days", f"about +{proj['added']['chill_portions']:.0f}",
-                  help=f"Chill portions likely to be added over the next two weeks, from the weather "
-                       f"forecast. {est['target']['variety']} needs {est['target']['target_cp']:.0f} in all.")
+                  help=f"Chill portions likely to be added over the next two weeks, {source}. "
+                       f"{est['target']['variety']} needs {est['target']['target_cp']:.0f} in all.")
 
     # displayModeBar off: no tiny toolbar to tap by accident on a phone.
     st.plotly_chart(build_chart(est), use_container_width=True, config={"displayModeBar": False})
     st.caption(f"Gray band: a normal year for this date. Below it the card says low, above it high. "
-               f"Dotted line: last winter. Dashed blue line: the next 14 days, from the weather forecast. "
+               f"Dotted line: last winter. Dashed blue line: the next 14 days, {source}. "
                f"Orange line: what {est['target']['variety']} needs. Counting started {started}.")
+
+
+def outlook_source(proj: dict) -> str:
+    """Say where the 14-day outlook comes from, matching the backend's projection method.
+
+    The backend uses the live weather forecast only when the date is today; for a past date (like the
+    demos) it uses the middle of past winters. The caption must not claim a forecast that wasn't used.
+    """
+    if proj.get("method") == "forecast":
+        return "from the weather forecast"
+    return "based on past winters on these dates"
 
 
 def grower_date(iso: str) -> str:

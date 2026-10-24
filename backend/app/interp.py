@@ -112,6 +112,8 @@ def estimate_series(hourly: dict[str, pd.Series], neighbors: pd.DataFrame,
     hourly: station_id -> hourly °F series indexed by datetime.
     neighbors: rows with station_id, elev_m, dist_km.
     Hours where a station is missing just drop that station from the weights.
+    With no station data at all, returns an empty series that still has a time index, so
+    callers can slice it by date and skip the window instead of crashing.
     """
     lapse = config.LAPSE_F_PER_M if lapse_f_per_m is None else lapse_f_per_m
     p = config.IDW_POWER if power is None else power
@@ -124,7 +126,7 @@ def estimate_series(hourly: dict[str, pd.Series], neighbors: pd.DataFrame,
         cols[row.station_id] = s + lapse * (row.elev_m - target_elev_m)
         weights[row.station_id] = 1.0 / max(row.dist_km, 0.5) ** p
     if not cols:
-        return pd.Series(dtype=float)
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
     frame = pd.DataFrame(cols)
     w = pd.Series(weights)[frame.columns]
     wmat = frame.notna().mul(w, axis=1)

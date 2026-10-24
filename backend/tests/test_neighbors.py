@@ -152,3 +152,20 @@ def test_load_hourly_warns_about_a_failed_station_and_keeps_the_rest(fake_key, m
     assert sorted(loaded) == ["SYN-A", "SYN-C"]
     assert "SYN-B" in caplog.text and "2024-25" in caplog.text and "RuntimeError" in caplog.text
     assert fake_key not in caplog.text
+
+
+def test_history_skips_a_winter_with_no_station_data(monkeypatch):
+    """A winter where no neighbor has data (offline and not cached) is left out of /history, not a crash.
+
+    The long view asks for 15 winters; offline, the oldest ones have no cached station, so the
+    estimate for them is empty. Before the fix that empty estimate crashed main.clip (500).
+    """
+    from fastapi.testclient import TestClient
+
+    real_coverage_fn = main.season_coverage_fn
+    monkeypatch.setattr(main, "season_coverage_fn",
+                        lambda year: (lambda sid: 0.0) if year < 2022 else real_coverage_fn(year))
+    r = TestClient(main.app).get("/history", params={"lat": 39.61, "lon": -121.82,
+                                                     "as_of": "2026-02-01", "max_seasons": 5})
+    assert r.status_code == 200, r.text
+    assert [s["season"] for s in r.json()["seasons"]] == ["2022-23", "2023-24", "2024-25"]

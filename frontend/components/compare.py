@@ -1,5 +1,4 @@
 """Compare tab: this season vs. past seasons, and the next 14 days.  Owner: Frontend B."""
-import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -16,25 +15,8 @@ def show(est: dict):
         a3.metric("Next 14 days", f"+{proj['added']['chill_portions']:.0f}", help=f"Method: {proj['method']}")
 
     st.plotly_chart(build_chart(est), use_container_width=True)
-    st.caption("Shaded band: where most past winters fell (the middle 80%). Dotted line: last winter. "
-               "Dashed line: the next 14 days, from the backend's forecast outlook.")
-
-
-def normal_band(seasons: list[dict]) -> tuple[list[float], list[float]]:
-    """Return the 10th and 90th percentile of the past curves for each day.
-
-    A percentile is the value that a given share of past winters stayed under. Days where
-    fewer than 3 past winters have data are left out so the band is never based on one or two years.
-    """
-    longest = max((len(s["curve"]) for s in seasons), default=0)
-    low, high = [], []
-    for day in range(longest):
-        values = [s["curve"][day] for s in seasons if len(s["curve"]) > day]
-        if len(values) < 3:
-            break
-        low.append(float(np.percentile(values, 10)))
-        high.append(float(np.percentile(values, 90)))
-    return low, high
+    st.caption("Shaded band: a normal year for this date. Below it the card says low, above it high. "
+               "Dotted line: last winter. Dashed line: the next 14 days, from the backend's forecast outlook.")
 
 
 def build_chart(est: dict) -> go.Figure:
@@ -43,8 +25,10 @@ def build_chart(est: dict) -> go.Figure:
     seasons = hist["seasons"]
     fig = go.Figure()
 
-    low, high = normal_band(seasons)
-    if low:
+    # The backend sends the normal band per day, drawn where the glance card's word changes,
+    # so the chart and the card always agree. A day with too few past winters is None (a gap).
+    low, high = hist.get("band_low") or [], hist.get("band_high") or []
+    if any(v is not None for v in low):
         days = list(range(len(low)))
         fig.add_trace(go.Scatter(x=days, y=high, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
         fig.add_trace(go.Scatter(x=days, y=low, mode="lines", line=dict(width=0), fill="tonexty",

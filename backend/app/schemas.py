@@ -85,6 +85,9 @@ class EstimateResponse(Open):
                                       "fewer than config.BAND_MIN_SEASONS winters")
     projection: dict
     neighbors: list[Neighbor]
+    station_note: str | None = Field(None, description="Plain warning when this winter's estimate uses fewer "
+                                                       "stations than config.NEIGHBORS (null otherwise); "
+                                                       "already worded")
     excluded: list[str]
 
 

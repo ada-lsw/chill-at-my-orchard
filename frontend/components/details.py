@@ -32,6 +32,8 @@ def _season_label(season: str) -> str:
 def show(place: dict, est: dict, dec: dict):
     """Draw the Details layer: the measures, the grower's range, options for a PCA, and the proof."""
     _measures(est)
+    if est.get("station_note"):
+        st.info(est["station_note"])   # the backend's warning when fewer stations than usual were used
     _download(place)
     _custom_range(est["chill"]["custom_range"])
     _pca_options(dec)

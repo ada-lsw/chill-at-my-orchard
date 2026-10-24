@@ -350,6 +350,7 @@ def estimate(
                     **decision.history_band(band_curves)},
         "projection": projection,
         "neighbors": neigh[["station_id", "name", "dist_km", "elev_m"]].round(1).to_dict("records"),
+        "station_note": decision.station_note(neigh[["dist_km"]].to_dict("records")),
         "excluded": exclude,
     }
 

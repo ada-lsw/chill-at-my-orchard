@@ -137,3 +137,32 @@ def test_band_edge_with_a_tie_follows_half_credit():
 
 def test_band_with_no_past_winters_is_empty():
     assert decision.history_band([]) == {"band_low": [], "band_high": []}
+
+
+# ---------------------------------------------------------------- fewer stations than usual
+
+def test_station_note_only_when_fewer_stations_than_usual():
+    """No note with the usual number of stations; a plain note with the count and distance when there are fewer."""
+    three = [{"dist_km": 25.0}, {"dist_km": 54.0}, {"dist_km": 56.0}][:config.NEIGHBORS]
+    assert decision.station_note(three) is None
+    one = decision.station_note([{"dist_km": 60.4}])
+    assert "only 1 weather station" in one and "38 miles (60 km)" in one
+    two = decision.station_note([{"dist_km": 73.1}, {"dist_km": 60.4}])
+    assert "only 2 weather stations" in two and "closest about 38 miles (60 km)" in two
+    assert f"{config.NEIGHBORS}" in two
+
+
+def test_estimate_sends_the_station_note(monkeypatch):
+    """/estimate carries station_note: empty at a demo pin with its usual stations, worded when caps leave one."""
+    from fastapi.testclient import TestClient
+    from app import main
+    client = TestClient(main.app)
+    kern = config.DEMO_ORCHARDS["kern"]
+    params = {"lat": kern["lat"], "lon": kern["lon"], "as_of": kern["as_of"], "variety": kern["variety"],
+              "exclude": [kern["holdout_station"]], "history_seasons": 2}
+    usual = client.get("/estimate", params=params).json()
+    assert len(usual["neighbors"]) == config.NEIGHBORS and usual["station_note"] is None
+    monkeypatch.setattr(config, "MAX_NEIGHBOR_KM", 30.0)     # only the closest synthetic station stays in reach
+    few = client.get("/estimate", params=params).json()
+    assert len(few["neighbors"]) < config.NEIGHBORS
+    assert few["station_note"] and "only" in few["station_note"]

@@ -70,20 +70,21 @@ def test_demo_runs_without_its_holdout(key, neighbor_spy):
 
 
 def test_each_demo_says_whether_it_hides_its_station():
-    """Durham's story is the removed station, so the demo hides it; Kern shows Shafter's own data (Ada, Oct 24)."""
+    """Both demo buttons hide their hold-out station, as the Kern label says ("station hidden to test the
+    estimate", PR #25) and as the app has always done; config.py now says so too (Ada, Oct 24 12:38pm)."""
     assert config.DEMO_ORCHARDS["durham"]["hide_in_demo"] is True
-    assert config.DEMO_ORCHARDS["kern"]["hide_in_demo"] is False
+    assert config.DEMO_ORCHARDS["kern"]["hide_in_demo"] is True
+    assert "hidden" in config.DEMO_ORCHARDS["kern"]["label"]
 
 
-def test_kern_demo_uses_shafter_and_durham_still_hides_12():
-    """With the picker's rule, the Kern estimate includes Shafter (5) and the Durham request still hides 12."""
-    kern, durham = config.DEMO_ORCHARDS["kern"], config.DEMO_ORCHARDS["durham"]
-    k = client.get("/estimate", params=demo_params(kern, picker_exclude(kern)))
-    d = client.get("/estimate", params=demo_params(durham, picker_exclude(durham)))
-    assert k.status_code == 200 and d.status_code == 200
-    assert "5" in [n["station_id"] for n in k.json()["neighbors"]]
-    assert k.json()["excluded"] == []
-    assert d.json()["excluded"] == ["12"]
+@pytest.mark.parametrize("key", DEMOS)
+def test_picker_rule_hides_each_demo_station(key):
+    """With the picker's rule, each demo request hides its own station and never uses it as a neighbor."""
+    demo = config.DEMO_ORCHARDS[key]
+    r = client.get("/estimate", params=demo_params(demo, picker_exclude(demo)))
+    assert r.status_code == 200, r.text
+    assert r.json()["excluded"] == [demo["holdout_station"]]
+    assert demo["holdout_station"] not in [n["station_id"] for n in r.json()["neighbors"]]
 
 
 @pytest.mark.parametrize("key", DEMOS)

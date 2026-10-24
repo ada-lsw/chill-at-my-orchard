@@ -86,7 +86,9 @@ APPTEST = textwrap.dedent("""
         next(b for b in at.button if word in str(b.label)).click().run()
         texts = [m.value for m in list(at.success) + list(at.warning) + list(at.info)]
         assert not at.exception, [e.value for e in at.exception]
-        assert not at.error, [e.value for e in at.error]
+        # A red box is fine when it is the glance card itself (an "AT RISK" or "LOW CHILL" verdict starts with its bold
+        # word); any other red box is an error message, which must not appear.
+        assert not [e.value for e in at.error if not e.value.startswith("**")], [e.value for e in at.error]
         assert any("CHILL SO FAR" in t for t in texts), texts
         assert any(word in h.value for h in at.subheader)
     print("BOTH DEMOS OK")

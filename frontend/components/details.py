@@ -9,6 +9,8 @@ import streamlit as st
 
 from api import get
 
+FEET_PER_METER = 3.28084   # growers think in feet (Drew, #14)
+
 
 def help_for(key: str) -> str:
     """The plain one-line explanation of a measure, from the backend's /glossary."""
@@ -51,7 +53,7 @@ def _measures(est: dict):
               f"{g['total_c_days']:.0f}" if g["started"] else "Not yet", help=help_for("gdd"))
     m6.metric("Hours missing", f"{ch['hours_missing']}", help=help_for("hours_missing"))
     m7.metric("Nearby stations used", f"{len(est['neighbors'])}", help=help_for("neighbors"))
-    m8.metric("Orchard elevation", f"{est['location']['elev_m']:.0f} m", help=help_for("elevation"))
+    m8.metric("Orchard elevation", f"{est['location']['elev_m'] * FEET_PER_METER:,.0f} ft", help=help_for("elevation"))
 
 
 def _custom_range(r: dict):

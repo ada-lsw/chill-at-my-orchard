@@ -221,7 +221,7 @@ MEASURE_HELP = {
                       f"chill portions carry the last reading forward."),
     "neighbors": (f"Weather stations within {MAX_NEIGHBOR_KM:.0f} km of your orchard that had data "
                   f"this winter; nearer stations count more in the estimate."),
-    "elevation": (f"Your orchard's height above sea level. Only stations within {MAX_ELEV_DIFF_M:.0f} m "
+    "elevation": (f"Your orchard's height above sea level. Only stations within about {MAX_ELEV_DIFF_M * 3.28084:,.0f} ft ({MAX_ELEV_DIFF_M:.0f} m) "
                   f"above or below it are used."),
     "proof_actual": "Chill portions the real station measured that season. We hid it from the estimate.",
     "proof_estimate": ("What we estimated at that spot from its neighbor stations alone. The small number "

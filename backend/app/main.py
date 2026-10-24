@@ -282,6 +282,7 @@ def estimate(
         "location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
         "as_of": str(as_of), "crop": crop, "data_source": config.DATA_SOURCE,
         "summary": decision.summary_line(vname, cp_now, vrec["target_cp"], v["band"], v["closest_season"]),
+        "how_sure": decision.how_sure_line(),
         "verdict": v,
         "target": target,
         "chill": {"start": str(c_start), "end": str(c_end), "season_complete": complete,

@@ -5,6 +5,10 @@ Answers the grower's three questions for any point:
   2. How does that compare to past years?   -> /estimate  "history"
   3. What should I expect in 1-2 weeks?     -> /estimate  "projection"
 And proves it works:                        -> /validate  (leave one station out)
+Plus decision support:                      -> /decision  (will chill reach the target, and when?)
+And the long view:                          -> /history   (season-end chill since the 1980s)
+
+Response shapes live in schemas.py (the contract with the frontend).
 """
 from __future__ import annotations
 
@@ -14,7 +18,8 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 
-from . import chill, config, data, forecast, interp, seasons
+from . import chill, config, data, decision, forecast, interp, seasons
+from .schemas import DecisionResponse, EstimateResponse, HistoryResponse
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
 METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
@@ -53,6 +58,57 @@ def estimate_at(lat, lon, elev, start, end, exclude) -> tuple[pd.Series, pd.Data
     return interp.estimate_series(hourly, neigh, elev), neigh
 
 
+def pin_elevation(lat, lon) -> tuple[float, str]:
+    """Elevation of the pin, falling back to the nearest station when offline."""
+    elev = interp.elevation_m(lat, lon)
+    if elev is not None:
+        return elev, "open-meteo"
+    st = interp.nearest(data.get_stations(), lat, lon, 1)
+    return float(st["elev_m"].iloc[0]), "nearest station (offline)"
+
+
+def resolve_variety(variety: str | None, crop: str | None) -> tuple[str, dict]:
+    """Pick the variety record. Defaults to the first variety of the crop (or of the menu)."""
+    if variety:
+        if variety not in config.VARIETIES:
+            raise HTTPException(404, f"Unknown variety '{variety}'. See /varieties")
+        return variety, config.VARIETIES[variety]
+    crop = crop or config.CROP_ORDER[0]
+    for name, v in config.VARIETIES.items():
+        if v["crop"] == crop:
+            return name, v
+    raise HTTPException(404, f"No variety for crop '{crop}'. See /varieties")
+
+
+def target_block(name: str, v: dict, so_far_cp: float) -> dict:
+    return {"variety": name, "crop": v["crop"], "target_cp": v["target_cp"], "range_cp": v["range_cp"],
+            "progress_pct": round(100.0 * so_far_cp / v["target_cp"], 0), "note": v["note"]}
+
+
+def past_scenarios(lat, lon, elev, exclude, as_of: date, until: date, n: int) -> list[dict]:
+    """For each past season: chill portions it added from as_of's calendar date to `until`.
+
+    Runs the Dynamic Model over the whole shifted season so the model's state is right,
+    then reads off what was added after the shifted as_of date, one value per day.
+    """
+    c_start = seasons.chill_season_start(as_of)
+    out = []
+    for k in range(1, n + 1):
+        s0, a0 = seasons.same_window_in(k, c_start, as_of)
+        _, u0 = seasons.same_window_in(k, c_start, until)
+        est, _ = estimate_at(lat, lon, elev, s0, u0, exclude)
+        est = clip(est, s0, u0)
+        if est.dropna().empty:
+            continue
+        cum = pd.Series(chill.chill_portions(est), index=est.index).resample("D").last().ffill()
+        before = cum[cum.index <= pd.Timestamp(a0)]
+        base = float(before.iloc[-1]) if not before.empty else 0.0  # chill on the shifted as_of date
+        after = cum[cum.index >= pd.Timestamp(a0)]
+        out.append({"season": f"{s0.year}-{str(s0.year + 1)[-2:]}",
+                    "added_by_day": [round(float(v) - base, 2) for v in after]})
+    return out
+
+
 # ---------------------------------------------------------------- endpoints
 
 @app.get("/health")
@@ -70,22 +126,20 @@ def demo():
     return config.DEMO_ORCHARDS
 
 
-@app.get("/estimate")
+@app.get("/estimate", response_model=EstimateResponse)
 def estimate(
     lat: float, lon: float,
     as_of: date = Query(default_factory=date.today),
-    crop: str = "almond",
+    crop: str | None = Query(None, description="walnut, pistachio, almond or prune"),
+    variety: str | None = Query(None, description="e.g. 'Chandler walnut'; see /varieties"),
     exclude: list[str] = Query(default=[]),
     history_seasons: int = 10,
     range_low_f: float = config.CUSTOM_RANGE_F[0],
     range_high_f: float = config.CUSTOM_RANGE_F[1],
 ):
-    elev = interp.elevation_m(lat, lon)
-    elev_source = "open-meteo"
-    stations_df = data.get_stations()
-    if elev is None:
-        elev = float(interp.nearest(stations_df, lat, lon, 1)["elev_m"].iloc[0])
-        elev_source = "nearest station (offline)"
+    vname, vrec = resolve_variety(variety, crop)
+    crop = vrec["crop"]
+    elev, elev_source = pin_elevation(lat, lon)
 
     # 1. So far
     c_start, c_end, complete = seasons.chill_window(as_of)
@@ -148,14 +202,24 @@ def estimate(
         actual_after = chill.summarize(clip(nxt, c_start, seasons.plus_days(c_end, 14)), crop)
         projection["actually_added"] = {m: round(actual_after[m] - so_far[m], 1) for m in METRICS}
 
+    # Verdict: chill portions so far vs. past seasons on the same date
+    cp_now = round(so_far["chill_portions"], 1)
+    this_curve = daily_curve(est)
+    v = decision.verdict(cp_now, [h["at_date"]["chill_portions"] for h in history])
+    v["closest_season"] = decision.closest_season(this_curve, history)
+    target = target_block(vname, vrec, cp_now)
+
     return {
         "location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
         "as_of": str(as_of), "crop": crop, "data_source": config.DATA_SOURCE,
+        "summary": decision.summary_line(vname, cp_now, vrec["target_cp"], v["band"], v["closest_season"]),
+        "verdict": v,
+        "target": target,
         "chill": {"start": str(c_start), "end": str(c_end), "season_complete": complete,
                   **{m: round(so_far[m], 1) for m in METRICS},
                   "hours_counted": so_far["hours_counted"], "hours_missing": so_far["hours_missing"],
                   "custom_range": so_far["custom_range"],
-                  "curve": daily_curve(est)},
+                  "curve": this_curve},
         "gdd": {"start": str(g_start), "end": str(g_end), "started": g_started, "total_c_days": round(gdd["gdd"], 1),
                 "method": "single sine", "thresholds_c": gdd["gdd_thresholds_c"]},
         "history": {"seasons": history, "percentiles": pct},
@@ -183,3 +247,66 @@ def validate(station_id: str, as_of: date = Query(default=date(2025, 2, 28))):
     return {"season": f"{c_start} to {c_end}", "with_elevation_adjustment": with_elev,
             "no_elevation_adjustment": no_elev, "data_source": config.DATA_SOURCE,
             "generated": datetime.now().isoformat(timespec="seconds")}
+
+
+@app.get("/varieties")
+def varieties():
+    """Crop menu (in the team's order) and each variety's chill target."""
+    return {"crop_order": config.CROP_ORDER, "varieties": config.VARIETIES}
+
+
+@app.get("/decision", response_model=DecisionResponse)
+def decision_endpoint(
+    lat: float, lon: float,
+    as_of: date = Query(default_factory=date.today),
+    variety: str | None = Query(None, description="e.g. 'Kerman pistachio'; see /varieties"),
+    crop: str | None = None,
+    exclude: list[str] = Query(default=[]),
+    history_seasons: int = 10,
+):
+    """Is chill likely to reach the variety's target by the target date, and when is the decision window?
+
+    Informs the decision only. Options are types to raise with a licensed PCA, never rates or timing.
+    """
+    vname, vrec = resolve_variety(variety, crop)
+    elev, _ = pin_elevation(lat, lon)
+    c_start, c_end, _ = seasons.chill_window(as_of)
+    est, _ = estimate_at(lat, lon, elev, c_start, as_of, exclude)
+    est = clip(est, c_start, as_of)
+    if est.dropna().empty:
+        raise HTTPException(404, "No station data near this point for this season")
+    so_far_cp = float(chill.chill_portions(est)[-1])
+    tdate = decision.target_date_for(as_of)
+    scen = past_scenarios(lat, lon, elev, exclude, as_of, tdate, history_seasons) if as_of < tdate else []
+    d = decision.decision(so_far_cp, as_of, vrec["crop"], vrec["target_cp"], scen)
+    return {"variety": vname, "crop": vrec["crop"], "as_of": str(as_of), "chill_start": str(c_start),
+            "line": decision.decision_line(d), **d}
+
+
+@app.get("/history", response_model=HistoryResponse)
+def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory=date.today),
+                     max_seasons: int = 15, exclude: list[str] = Query(default=[])):
+    """Season-end chill portions at the pin for past seasons, with a trend (Julia's long-horizon ask).
+
+    v1 rebuilds each season from hourly station data, which is slow for decades of CIMIS data.
+    Work package B2 replaces this with FNRIC's daily chill history per station (one request each).
+    """
+    elev, elev_source = pin_elevation(lat, lon)
+    c_start = seasons.chill_season_start(as_of)
+    rows = []
+    for k in range(1, max_seasons + 1):
+        s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
+        est, _ = estimate_at(lat, lon, elev, s0, e0, exclude)
+        est = clip(est, s0, e0)
+        if est.dropna().empty:
+            continue
+        rows.append({"season": f"{s0.year}-{str(s0.year + 1)[-2:]}",
+                     "chill_portions": round(float(chill.chill_portions(est)[-1]), 1)})
+    rows.sort(key=lambda r: r["season"])
+    trend = None
+    if len(rows) >= 5:
+        x = np.array([int(r["season"][:4]) for r in rows]); y = np.array([r["chill_portions"] for r in rows])
+        trend = round(float(np.polyfit(x, y, 1)[0] * 10), 1)
+    return {"location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
+            "season_end": f"{seasons.CHILL_END[0]:02d}-{seasons.CHILL_END[1]:02d}",
+            "seasons": rows, "trend_cp_per_decade": trend, "source": config.DATA_SOURCE}

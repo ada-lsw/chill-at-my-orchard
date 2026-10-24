@@ -60,24 +60,38 @@ Docker files are kept in the repo as an optional alternative (`docker compose up
 
 ## How it's built
 
+Who builds what: [`docs/WORK_PACKAGES.md`](docs/WORK_PACKAGES.md). Rules for every teammate's Claude: [`CLAUDE.md`](CLAUDE.md).
+
 ```
-frontend/  Streamlit app — map, demo buttons, three answers, chart, proof panel
-              talks to the backend over HTTP only (BACKEND_URL)
-backend/   FastAPI
-  app/data.py      CIMIS fetch + cache, gap filling, synthetic test data
-  app/chill.py     chill hours, Utah units, chill portions (Dynamic Model), GDD
-  app/interp.py    estimate at any point: IDW + elevation lapse rate; leave-one-out
-  app/forecast.py  Open-Meteo 14-day forecast, cached for offline demos
-  app/seasons.py   season windows (chill from Nov 1, GDD from Mar 1)
-  app/main.py      API: /estimate, /validate, /stations, /demo, /health
-  app/config.py    all shared settings — change values here, not in code
-data/cache/  cached station data (git-ignored, shared into Docker as a volume)
+backend/app/   FastAPI: all data and math
+  config.py        shared settings and per-variety chill targets
+  schemas.py       the API contract (live at /docs)
+  data.py          CIMIS fetch, one cache file per station per season, gap filling, synthetic data
+  chill.py         chill hours, Utah units, chill portions (Dynamic Model), GDD
+  interp.py        estimate at any point: IDW + elevation lapse rate; leave-one-out
+  decision.py      verdict band, closest past season, decision support, plain-language lines
+  forecast.py      Open-Meteo 14-day forecast, cached for offline demos
+  seasons.py       season windows (chill from Sept 1, GDD from bloom)
+  main.py          endpoints
+frontend/      Streamlit: shows what the backend returns
+  app.py           wires the screen parts together
+  api.py           the only code that calls the backend
+  components/      picker, glance card, compare, long view, details
+scripts/       check_cimis.py (test the key), warm_cache.py (cache the demo data)
+data/cache/    cached data (git-ignored)
 ```
 
 | Endpoint | What it answers |
 | --- | --- |
-| `GET /estimate?lat=&lon=&as_of=&crop=&exclude=` | Questions 1–3 for any point |
-| `GET /validate?station_id=&as_of=` | Hide a station, estimate it, report error with and without the elevation adjustment |
+| `GET /estimate?lat=&lon=&as_of=&variety=&exclude=` | Chill so far, vs. past years, next 14 days, verdict band, glance sentence |
+| `GET /decision?lat=&lon=&as_of=&variety=&exclude=` | Will chill reach the variety's target by Mar 2, and when the decision window opens |
+| `GET /history?lat=&lon=` | Season-end chill for past seasons, with a trend |
+| `GET /validate?station_id=&as_of=` | Hide a station, estimate it, report the error with and without the elevation adjustment |
+| `GET /varieties`, `/demo`, `/stations` | Crop menu and targets, demo orchards, station list |
+
+**Real data:** `python scripts/check_cimis.py`, then `python scripts/warm_cache.py`.
+
+**Decision support informs; it doesn't prescribe.** In California, recommending agricultural pesticide use (including growth regulators) requires a licensed Pest Control Adviser. The tool shows whether chill is likely to fall short, when the decision window opens, and which types of options to raise with a PCA, never rates or application steps.
 
 ## Data contract
 
@@ -86,13 +100,13 @@ Every stage reads and writes one hourly table:
 
 ## Who owns what
 
-| Folder | Owner |
+| Package | Files |
 | --- | --- |
-| `backend/app/data.py` | Data |
-| `backend/app/chill.py` | Chill and GDD |
-| `backend/app/interp.py` | Interpolation and validation |
-| `frontend/` | App |
-| `backend/app/forecast.py`, `pitch/` | Forecast, pitch, submission |
+| Backend A (Ada) | `data.py`, `chill.py`, `interp.py`, `decision.py`, `main.py`, `scripts/` |
+| Backend B | `fnric.py`, `tests/test_golden.py`, `/history` |
+| Frontend A | `frontend/app.py`, `components/picker.py`, `components/glance.py` |
+| Frontend B | `components/compare.py`, `components/history_panel.py`, `components/details.py` |
+| Pitch | `pitch/` |
 
 ## Team rules
 

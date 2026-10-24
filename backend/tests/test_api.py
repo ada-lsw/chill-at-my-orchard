@@ -45,3 +45,37 @@ def test_gdd_after_bloom():
                                        "history_seasons": 1})
     g = r.json()["gdd"]
     assert g["started"] is True and g["total_c_days"] > 0
+
+
+def test_estimate_has_glance_fields():
+    r = client.get("/estimate", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01",
+                                       "variety": "Chandler walnut", "exclude": ["12"], "history_seasons": 3})
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["summary"].startswith("Your Chandler walnut trees have")
+    assert b["verdict"]["band"] in ("low", "normal", "high")
+    assert b["target"]["target_cp"] == 50
+    assert b["chill"]["start"] == "2025-09-01"
+
+
+def test_decision_pistachio():
+    r = client.get("/decision", params={"lat": 35.62, "lon": -119.69, "as_of": "2026-01-15",
+                                       "variety": "Kerman pistachio", "exclude": ["5"], "history_seasons": 4})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["status"] in ("on_track", "watch", "at_risk", "done")
+    assert d["target_date"] == "2026-03-02"
+    assert d["decision_window"]["milestone_cp"] == 55
+    assert "PCA" in d["pca_handoff"]
+
+
+def test_unknown_variety_is_404():
+    r = client.get("/decision", params={"lat": 35.62, "lon": -119.69, "variety": "Banana"})
+    assert r.status_code == 404
+
+
+def test_history_has_trend():
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 6})
+    assert r.status_code == 200, r.text
+    h = r.json()
+    assert len(h["seasons"]) >= 5 and h["trend_cp_per_decade"] is not None

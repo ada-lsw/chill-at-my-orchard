@@ -47,6 +47,9 @@ IDW_POWER = float(os.getenv("IDW_POWER", 2.0))
 # (6.5 °C/km ≈ 0.0117 °F/m) was tried; Ada's rule picked "off" (typical miss 3.52 vs 3.63 at 3 neighbors,
 # a small margin; winter valley inversions can make a fixed lapse wrong).
 LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0))
+# Made-up weather (DATA_SOURCE=synthetic) keeps the standard lapse so mountains stay colder and the
+# synthetic demo cards don't change when the model setting above changes.
+SYNTHETIC_LAPSE_F_PER_M = 0.0117
 
 # Which stations may be neighbors (interp.candidates). For each season, the app walks this list
 # closest first and keeps the first NEIGHBORS stations that have data that season;

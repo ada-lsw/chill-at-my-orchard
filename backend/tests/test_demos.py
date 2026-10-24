@@ -1,4 +1,5 @@
-"""The demo orchards and the winters they need, checked on synthetic data (no key or internet needed)."""
+"""The demo orchards: each one works with its hold-out station hidden, its pin sits on that station,
+and the winters it shows get cached. Checked on synthetic data (no key or internet needed)."""
 import importlib.util
 import inspect
 import os
@@ -8,8 +9,67 @@ from pathlib import Path
 os.environ["DATA_SOURCE"] = "synthetic"
 
 import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
-from app import config, data, main  # noqa: E402
+from app import config, data, interp, main  # noqa: E402
+
+client = TestClient(main.app)
+DEMOS = sorted(config.DEMO_ORCHARDS)
+
+
+def demo_params(demo: dict) -> dict:
+    """The query frontend/app.py sends for a demo, with a short history to keep CI quick."""
+    return {"lat": demo["lat"], "lon": demo["lon"], "as_of": demo["as_of"], "variety": demo["variety"],
+            "exclude": [demo["holdout_station"]], "history_seasons": 3}
+
+
+@pytest.fixture
+def neighbor_spy(monkeypatch):
+    """Every station the app picks as a neighbor, in any window, while the test runs.
+
+    /decision doesn't list its neighbors, so this wraps main.estimate_at to see them.
+    """
+    used = []
+    real_estimate_at = main.estimate_at
+
+    def spy(*args, **kwargs):
+        """main.estimate_at, also recording the neighbors it picked."""
+        est, neighbors = real_estimate_at(*args, **kwargs)
+        used.extend(neighbors["station_id"])
+        return est, neighbors
+
+    monkeypatch.setattr(main, "estimate_at", spy)
+    return used
+
+
+@pytest.mark.parametrize("key", DEMOS)
+def test_demo_runs_without_its_holdout(key, neighbor_spy):
+    """Guard test: both demo endpoints answer, never use the hidden station, and keep the variety.
+
+    It passes before and after the Kern pin change, so it guards the demos; it doesn't prove the fix.
+    """
+    demo = config.DEMO_ORCHARDS[key]
+    hidden = demo["holdout_station"]
+    est = client.get("/estimate", params=demo_params(demo))
+    dec = client.get("/decision", params=demo_params(demo))
+    assert est.status_code == 200, est.text
+    assert dec.status_code == 200, dec.text
+    shown = [n["station_id"] for n in est.json()["neighbors"]]
+    assert shown and hidden not in shown                  # neighbors listed, never the hidden one
+    assert neighbor_spy and hidden not in neighbor_spy    # nor in any window of either endpoint
+    assert est.json()["target"]["variety"] == demo["variety"]
+    assert dec.json()["variety"] == demo["variety"]       # /decision has variety at the top level
+
+
+@pytest.mark.parametrize("key", DEMOS)
+def test_demo_pin_sits_on_its_holdout_station(key):
+    """The hold-out proof (/validate for the hidden station) measures the error at the demo's own spot."""
+    demo = config.DEMO_ORCHARDS[key]
+    station = data.get_stations().set_index("station_id").loc[demo["holdout_station"]]
+    km = float(interp.haversine_km(demo["lat"], demo["lon"], station.lat, station.lon))
+    # 1 km is a test tolerance for coordinate rounding (Durham's pin is ~0.4 km from its station),
+    # not a model setting.
+    assert km <= 1.0, f"{key} pin is {km:.1f} km from station {demo['holdout_station']}"
 
 
 @pytest.fixture(scope="module")

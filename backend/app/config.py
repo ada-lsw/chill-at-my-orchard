@@ -130,7 +130,10 @@ DEMO_ORCHARDS = {
     },
     "kern": {
         "label": "Kern pistachios (far from a station)",
-        "lat": 35.62, "lon": -119.69, "variety": "Kerman pistachio",  # Lost Hills area, placeholder pin
+        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list) while
+        # Shafter is hidden: the hold-out proof (/validate for station 5) then measures the
+        # estimate's error at exactly the spot this demo shows.
+        "lat": 35.532556, "lon": -119.28179, "variety": "Kerman pistachio",
         "holdout_station": "5",   # hide Shafter to prove the estimate where stations are sparse
         "as_of": "2026-02-01",
     },

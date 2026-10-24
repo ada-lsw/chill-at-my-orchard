@@ -153,4 +153,4 @@ Every stage reads and writes one hourly table:
 
 ## Data and credits
 
-CIMIS (California Department of Water Resources) · Open-Meteo (forecast and elevation; Copernicus DEM) · chill models as described by UC Davis FNRIC · FNRIC weather models API (daily chill history per station, UC Davis Fruit & Nut Research & Information Center) · Dynamic Model after Fishman et al. (1987) and Erez et al. (1990), following chillR (Luedeling).
+CIMIS (California Department of Water Resources) · Open-Meteo (forecast and elevation; Copernicus DEM) · chill models as described by UC Davis FNRIC · FNRIC weather models API (daily chill history per station, UC Davis Fruit & Nut Research & Information Center) · Dynamic Model after Fishman et al. (1987) and Erez et al. (1990), following chillR (Luedeling) · hourly temperatures from daily highs and lows ported from chillR's make_hourly_temps (Linvill 1990; sunrise and sunset after Spencer 1971 and Almorox et al. 2005).

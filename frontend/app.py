@@ -1,22 +1,18 @@
-"""Chill at My Orchard — grower-facing app. Talks to the backend API only."""
-import os
+"""Chill at My Orchard — grower-facing app. Talks to the backend API only.
+
+This file is the page shell: pick a place, call /estimate, show the three answers,
+then hand the result to each section in frontend/sections/ in page order.
+"""
 from datetime import date
 
 import folium
-import plotly.graph_objects as go
-import requests
 import streamlit as st
 from streamlit_folium import st_folium
 
-API = os.getenv("BACKEND_URL", "http://localhost:8000")
+from api import get
+from sections import climate_trend, proof, season_chart
+
 st.set_page_config(page_title="Chill at My Orchard", layout="wide")
-
-
-@st.cache_data(show_spinner=False)
-def get(path, **params):
-    r = requests.get(f"{API}{path}", params=params, timeout=300)
-    r.raise_for_status()
-    return r.json()
 
 
 # ---------------------------------------------------------------- pick a place
@@ -93,30 +89,11 @@ st.markdown(f"**Your temperature range, since {ch['start']}:** "
             f"{cr['hours_above']:.0f} hours above {cr['high_f']:.0f}°F")
 st.caption(f"{ch['hours_missing']} missing hours · elevation {est['location']['elev_m']} m")
 
-# ---------------------------------------------------------------- chart
-fig = go.Figure()
-for s in hist["seasons"]:
-    fig.add_trace(go.Scatter(y=s["curve"], mode="lines", line=dict(color="lightgray", width=1),
-                             name=s["season"], hoverinfo="name+y", showlegend=False))
-fig.add_trace(go.Scatter(y=ch["curve"], mode="lines", line=dict(color="#1f6f8b", width=4), name="This season"))
-fig.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10),
-                  xaxis_title="Days since Nov 1", yaxis_title="Chill portions",
-                  title="This season (blue) vs. past seasons (gray)")
-st.plotly_chart(fig, use_container_width=True)
-
-# ---------------------------------------------------------------- proof
-station = pin.get("holdout_station")
-if station:
-    with st.expander("How accurate is this? (we hid the real station and estimated it)", expanded=True):
-        v = get("/validate", station_id=station)
-        w, n = v["with_elevation_adjustment"], v["no_elevation_adjustment"]
-        b1, b2, b3 = st.columns(3)
-        b1.metric("Actual chill portions", f"{w['actual']['chill_portions']:.1f}")
-        b2.metric("Our estimate", f"{w['estimated']['chill_portions']:.1f}",
-                  f"{w['error']['chill_portions']:+.1f} error", delta_color="off")
-        b3.metric("Hourly error (RMSE)", f"{w['hourly_rmse_F']} °F")
-        st.caption(f"Season {v['season']}. Without elevation adjustment: "
-                   f"{n['error']['chill_portions']:+.1f} portions error. "
-                   f"Neighbors: {', '.join(x['station_id'] for x in w['neighbors'])}")
+# ---------------------------------------------------------------- sections (one file each)
+season_chart.render(est)
+climate_trend.render(est, crop)
+proof.render(pin)
 
 st.caption("Data: CIMIS (California DWR), Open-Meteo. Chill models as used by UC Davis FNRIC.")
+st.caption("Research: Jha & Pathak 2024, Commun. Earth Environ. 5:485 · Zhang et al. 2021, Sci. Total Environ. "
+           "791:148025 · Pathak et al. 2018, Agronomy 8:25 · Parker et al. 2021, Sci. Total Environ. 762:143971")

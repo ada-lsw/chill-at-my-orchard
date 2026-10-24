@@ -51,7 +51,7 @@ def _box(style: dict, word: str, sentence: str):
     so nothing in it can break the page.
     """
     st.markdown(
-        f"""<div role="status" style="background:{style['fill']};border-left:12px solid {style['edge']};
+        f"""<div role="status" class="glance-box" style="background:{style['fill']};border-left:12px solid {style['edge']};
                     border-radius:8px;padding:12px 16px;margin:6px 0;color:{INK};font-size:1.15rem">
               <span style="color:{style['edge']};font-weight:800;font-size:1.3rem">{style['icon']}</span>
               <b style="letter-spacing:.03em">{escape(word.upper())}.</b> {escape(sentence)}

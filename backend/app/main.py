@@ -62,12 +62,12 @@ def clip(s: pd.Series, start: date, end: date) -> pd.Series:
     return s[(s.index >= pd.Timestamp(start)) & (s.index < pd.Timestamp(end) + pd.Timedelta(days=1))]
 
 
-def daily_curve(s: pd.Series) -> list[float]:
-    """Cumulative chill portions at the end of each day of the season (for the chart)."""
+def daily_curve(s: pd.Series, digits: int = 2) -> list[float]:
+    """Cumulative chill portions at the end of each day of the season, rounded to `digits` (2 for the chart)."""
     if s.empty:
         return []
     cp = pd.Series(chill.chill_portions(s), index=s.index)
-    return [round(float(v), 2) for v in cp.resample("D").last().ffill()]
+    return [round(float(v), digits) for v in cp.resample("D").last().ffill()]
 
 
 def estimate_at(lat, lon, elev, start, end, exclude, saved_only: bool = False) -> tuple[pd.Series, pd.DataFrame]:
@@ -222,20 +222,24 @@ def estimate(
         gdd = chill.summarize(pd.Series(dtype=float, index=pd.DatetimeIndex([])), crop)
 
     # 2. Past years: same window, shifted back; extend 14 days for the climatology projection
-    history = []
+    history, band_curves = [], []
     for k in range(1, history_seasons + 1):
         h_start, h_end = seasons.same_window_in(k, c_start, c_end)
         h_est, _ = estimate_at(lat, lon, elev, h_start, seasons.plus_days(h_end, 14), exclude)
         if h_est.dropna().empty:
             continue
+        window = clip(h_est, h_start, seasons.plus_days(h_end, 14))
         at_date = chill.summarize(clip(h_est, h_start, h_end), crop)
-        plus14 = chill.summarize(clip(h_est, h_start, seasons.plus_days(h_end, 14)), crop)
+        plus14 = chill.summarize(window, crop)
         history.append({
             "season": seasons.season_label(h_start.year),
             "at_date": {m: round(at_date[m], 1) for m in METRICS},
             "next_14_days": {m: round(plus14[m] - at_date[m], 1) for m in METRICS},
-            "curve": daily_curve(clip(h_est, h_start, seasons.plus_days(h_end, 14))),
+            "curve": daily_curve(window),
         })
+        # The card ranks 1-decimal numbers (cp_now, at_date), so the band uses the same precision, rounded
+        # once from the raw values (rounding the 2-decimal curve again could differ from at_date).
+        band_curves.append(daily_curve(window, digits=1))
     pct = {}
     if history:
         for m in METRICS:
@@ -287,7 +291,8 @@ def estimate(
                   "curve": this_curve},
         "gdd": {"start": str(g_start), "end": str(g_end), "started": g_started, "total_c_days": round(gdd["gdd"], 1),
                 "method": "single sine", "thresholds_c": gdd["gdd_thresholds_c"]},
-        "history": {"seasons": history, "percentiles": pct},
+        "history": {"seasons": history, "percentiles": pct,
+                    **decision.history_band(band_curves)},
         "projection": projection,
         "neighbors": neigh[["station_id", "name", "dist_km", "elev_m"]].round(1).to_dict("records"),
         "excluded": exclude,

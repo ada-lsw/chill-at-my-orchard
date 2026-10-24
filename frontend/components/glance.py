@@ -79,7 +79,6 @@ def show(place: dict, est: dict, dec: dict):
     if w and w.get("likely_between"):
         c3.metric(f"Reaches {w['milestone_cp']:.0f} chill portions", " to ".join(_grower_date(d) for d in w["likely_between"]),
                   help="When rest-breaking treatment decisions usually happen. Your PCA decides.")
-    _share_link(place)
 
 
 def _app_base_url() -> str | None:
@@ -111,14 +110,15 @@ def _share_query(place: dict) -> str:
     return "?" + urlencode(q)
 
 
-def _share_link(place: dict):
-    """A full link that reopens this exact orchard, for the grower to text their PCA.
+def share_link(place: dict):
+    """A full link that reopens this exact orchard, for the grower to send their PCA, consultant or anyone else.
 
+    app.py shows it inside the "Share my data" drop-down at the bottom of the page, not on the glance card.
     st.code shows the link with a copy button, so it pastes straight into a message.
     """
     base = _app_base_url()
-    st.markdown("**Share with my PCA:** copy this link and send it in a text or email. "
-                "It opens this orchard, variety and date.")
+    st.markdown("Copy this link and send it in a text or email to your PCA, crop consultant or anyone else "
+                "helping with your orchard. It opens this orchard, variety and date, with the same numbers.")
     if base:
         st.code(base + _share_query(place), language=None, wrap_lines=True)
     else:

@@ -56,5 +56,8 @@ with tab_long:
 with st.expander("Show the numbers"):
     details.show(place, est, dec)
 
+with st.expander("Share my data"):
+    glance.share_link(place)   # a link that reopens this orchard, for a PCA, consultant or anyone else
+
 st.caption("Data: CIMIS (California DWR), FNRIC chill models (UC Davis), Open-Meteo. "
            "Decision support informs; a licensed PCA decides.")

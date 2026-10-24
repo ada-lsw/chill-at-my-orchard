@@ -52,19 +52,21 @@ def daily_curve(s: pd.Series) -> list[float]:
 
 
 def estimate_at(lat, lon, elev, start, end, exclude) -> tuple[pd.Series, pd.DataFrame]:
-    stations = data.get_stations()
-    neigh = interp.nearest(stations, lat, lon, config.NEIGHBORS, exclude=exclude)
-    hourly = load_hourly(neigh["station_id"], start, end)
+    """Hourly estimate at a point for one window, and the neighbor stations actually used.
+
+    Neighbors are chosen per window: the closest stations from the shared pool
+    (interp.candidates) that have data for this window. So a winter before a station opened,
+    or after it closed, uses the next closest station instead.
+    """
+    cands = interp.candidates(data.get_stations(), lat, lon, elev, exclude=exclude)
+    hourly = load_hourly(cands["station_id"], start, end)
+    neigh = interp.pick_neighbors(hourly, cands, start, end)
     return interp.estimate_series(hourly, neigh, elev), neigh
 
 
 def pin_elevation(lat, lon) -> tuple[float, str]:
     """Elevation of the pin, falling back to the nearest station when offline."""
-    elev = interp.elevation_m(lat, lon)
-    if elev is not None:
-        return elev, "open-meteo"
-    st = interp.nearest(data.get_stations(), lat, lon, 1)
-    return float(st["elev_m"].iloc[0]), "nearest station (offline)"
+    return interp.pin_elevation(data.get_stations(), lat, lon)
 
 
 def resolve_variety(variety: str | None, crop: str | None) -> tuple[str, dict]:
@@ -237,13 +239,16 @@ def validate(station_id: str, as_of: date = Query(default=date(2025, 2, 28))):
         raise HTTPException(404, f"Unknown station {station_id}")
     c_start, c_end, _ = seasons.chill_window(as_of)
     target = stations_df.set_index("station_id").loc[station_id]
-    neigh = interp.nearest(stations_df, target.lat, target.lon, config.NEIGHBORS, exclude=[station_id])
-    hourly = load_hourly(list(neigh["station_id"]) + [station_id], c_start, c_end)
+    # Same neighbor rules as the app: closest stations from the shared pool with data this winter.
+    cands = interp.candidates(stations_df, target.lat, target.lon, target.elev_m, exclude=[station_id])
+    hourly = load_hourly(list(cands["station_id"]) + [station_id], c_start, c_end)
     if station_id not in hourly:
         raise HTTPException(404, f"No data for station {station_id} in {c_start}..{c_end}")
+    neigh = interp.pick_neighbors(hourly, cands, c_start, c_end)
     summarize = lambda s: chill.summarize(s)  # noqa: E731
-    with_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize)
-    no_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, lapse_f_per_m=0.0)
+    with_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, neighbors=neigh)
+    no_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, lapse_f_per_m=0.0,
+                                   neighbors=neigh)
     return {"season": f"{c_start} to {c_end}", "with_elevation_adjustment": with_elev,
             "no_elevation_adjustment": no_elev, "data_source": config.DATA_SOURCE,
             "generated": datetime.now().isoformat(timespec="seconds")}

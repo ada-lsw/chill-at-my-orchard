@@ -7,7 +7,7 @@ Run from the repo root, in a Codespace or with a .env file:
 It checks, in order:
   1. the key is set (prints only whether it exists)
   2. the station list loads, and Durham (12) shows as inactive
-  3. the nearest active stations to each demo orchard
+  3. the station pool the app can pick neighbors from, for each demo orchard
   4. one day of hourly temperature from Davis (6) parses into our data contract
 If a step fails, it says which one and stops. Paste that message (never the key) to the team.
 """
@@ -46,12 +46,13 @@ def main():
     if not durham.empty:
         print(f"    Durham (12): active={bool(durham['active'].iloc[0])} (expected False)")
 
-    step(3, "Nearest active stations to each demo orchard")
-    active = st[st["active"]]
+    step(3, "Station pool for each demo orchard (closest first; the app uses the closest with data)")
     for key, d in config.DEMO_ORCHARDS.items():
-        near = interp.nearest(active, d["lat"], d["lon"], config.NEIGHBORS, exclude=[d["holdout_station"]])
-        print(f"    {key}: " + ", ".join(f"{r.station_id} {r['name']} ({r.dist_km:.0f} km, {r.elev_m:.0f} m)"
-                                       for _, r in near.iterrows()))
+        elev, _ = interp.pin_elevation(st, d["lat"], d["lon"])
+        pool = interp.candidates(st, d["lat"], d["lon"], elev, exclude=[d["holdout_station"]])
+        print(f"    {key} (pin {elev:.0f} m): " + ", ".join(
+            f"{r.station_id} {r['name']} ({r.dist_km:.0f} km, {r.elev_m:.0f} m{'' if r.active else ', closed'})"
+            for _, r in pool.iterrows()))
 
     step(4, "One day of hourly temperature from Davis (6)")
     day = date.today() - timedelta(days=2)

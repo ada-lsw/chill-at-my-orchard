@@ -86,6 +86,32 @@ VARIETIES = {
 # Crop menu order from the team plan.
 CROP_ORDER = ["walnut", "pistachio", "almond", "prune"]
 
+# Research notes for the "Is chill declining here?" long view, one per crop, served by /varieties.
+# Figures are in chill portions and checked against the papers (page refs in each comment).
+# Where a paper gives no chill-portion figure for a crop, the note states no number.
+CLIMATE_CAPTION = ("Across the Central Valley and Central Coast, chill fell about 1.5 chill portions "
+                   "per decade from 1979 to 2019 (Zhang et al. 2021).")
+# Zhang et al. 2021, Sci. Total Environ. 791:148025, Conclusions (1): "-0.15CP/year", 1979-2019.
+CROP_CONTEXT = {
+    # Jha & Pathak 2024, Commun. Earth Environ. 5:485, Methods: walnut ~700 CH (38-54 CP).
+    # No chill number in the note: the chart's target line already says what this variety needs.
+    "walnut": ("Walnuts are among the crops most exposed to warmer winters in the Central Valley "
+               "(Pathak et al. 2018)."),
+    # Jha & Pathak 2024, Methods: pistachio ~1000 CH (36-65 CP). Pathak et al. 2018, Agronomy 8:25,
+    # section 4.2: walnut and pistachio need male and female bloom in sync, regulated by chill.
+    "pistachio": ("In low-chill years, male and female pistachio trees can bloom out of sync, "
+                  "which hurts pollination (Pathak et al. 2018)."),
+    # Pathak et al. 2018, section 4.2: low-chill crops including almond unlikely to become critical
+    # by 2100. Parker et al. 2021, Sci. Total Environ. 762:143971: almond bloom frost still a risk.
+    "almond": ("Almonds have a low chill need, and research expects winter chill to stay sufficient for "
+               "them this century (Pathak et al. 2018). Frost during bloom is the bigger risk to watch "
+               "(Parker et al. 2021)."),
+    # Jha & Pathak 2024 lists plum among the high-chill crops it studied (CP figure not given).
+    # Pathak et al. 2018, section 4.2: high-chill crops lose the most Central Valley area.
+    "prune": ("Prunes are plums, one of the higher-chill crops studied (Jha & Pathak 2024). High-chill "
+              "crops lose the most suitable area in the Central Valley as winters warm (Pathak et al. 2018)."),
+}
+
 # Verdict band: where chill so far sits among past seasons on the same date (percentiles).
 VERDICT_LOW_PCT = 20     # below this: "low"
 VERDICT_HIGH_PCT = 80    # above this: "high"; between: "normal"
@@ -155,4 +181,57 @@ DEMO_ORCHARDS = {
         "hide_in_demo": False,    # the demo button keeps Shafter: the grower sees its own reading
         "as_of": "2026-02-01",
     },
+}
+
+# ---------------------------------------------------------------- how sure we are
+# Hold-out test: hide a real station for a whole winter, estimate it from its neighbors, compare.
+# Every number below: `pitch/validation.csv`, setting "elevation off, 3 neighbors, caps on" (the
+# shipped setting), made by `scripts/validation_table.py`. Miss = size of the chill-portion error.
+# tests/test_how_sure.py recomputes each one from the CSV, so rerun that test after rerunning the script.
+HOW_SURE_SETTING = "elevation off, 3 neighbors, caps on"
+# Typical miss (average size of the error), chill portions, per hidden station. 12 = Durham, 5 = Shafter (Kern pin).
+HOW_SURE_TYPICAL_MISS_CP = {"12": 2.43, "5": 4.49}
+HOW_SURE_WINTERS = {"12": 9, "5": 10}          # winters tested per station
+HOW_SURE_TYPICAL_MISS_ALL_CP = 3.52            # typical miss over all winters at both stations
+HOW_SURE_WINTERS_ALL = 19                      # winters tested, both stations
+HOW_SURE_WORST_MISS_CP = 10.4                  # largest single-winter miss (Shafter)
+HOW_SURE_WINTERS_WITHIN = 12                   # winters within 3.5 (the typical miss rounded to a half)
+HOW_SURE_KERN_TOO_HIGH = 9                     # Shafter winters where the estimate was too high (of 10)
+
+# ---------------------------------------------------------------- Details layer explanations
+# One plain line for every number the Details layer ("Show the numbers") shows; served by /glossary.
+# Each line restates a definition already in the repo (chill.py docstrings and Utah bins,
+# CLAUDE.md domain rules, the settings above). Model names are allowed here: this is the
+# Details layer. Never rates, mixes, application steps or dates for treatments (PCA guardrail).
+MEASURE_HELP = {
+    "chill_start": "Every chill number here counts from this date.",
+    "chill_portions": ("Winter chill counted with the Dynamic Model, the same unit as your variety's "
+                       "chill target."),
+    "chill_hours": "Hours when the air was above 32°F and at or below 45°F.",
+    "hours_lt_45": "Hours when the air was at or below 45°F, freezing hours included.",
+    "utah_units": ("Utah model: each hour adds chill by its temperature, most between 36°F and 48°F, "
+                   "and hours above 60°F take chill away."),
+    "gdd": ("Warmth added up day by day since bloom, in °C-days, counting only warmth between the "
+            "limits shown (single-sine method). The bloom date is an assumption, not your orchard's."),
+    "custom_below": "Hours at or below the low end of your temperature range.",
+    "custom_between": "Hours above the low end of your range and at or below the high end.",
+    "custom_above": "Hours above the high end of your temperature range.",
+    "hours_missing": (f"Hours with no reading from any nearby station, even after gaps of up to "
+                      f"{MAX_FILL_HOURS} hours were filled in. Hour and unit counts skip them; "
+                      f"chill portions carry the last reading forward."),
+    "neighbors": (f"Weather stations within {MAX_NEIGHBOR_KM:.0f} km of your orchard that had data "
+                  f"this winter; nearer stations count more in the estimate."),
+    "elevation": (f"Your orchard's height above sea level. Only stations within about {MAX_ELEV_DIFF_M * 3.28084:,.0f} ft ({MAX_ELEV_DIFF_M:.0f} m) "
+                  f"above or below it are used."),
+    "proof_actual": "Chill portions the real station measured that season. We hid it from the estimate.",
+    "proof_estimate": ("What we estimated at that spot from its neighbor stations alone. The small number "
+                       "is how far off we were."),
+    "proof_hourly_error": ("How far off our hourly temperatures typically were at that station, in °F "
+                           "(root mean square error)."),
+    "proof_no_elevation": "The same check without adjusting temperatures for differences in height.",
+    "how_sure_by_station": (
+        f"Typical miss: Durham {HOW_SURE_TYPICAL_MISS_CP['12']:.1f} chill portions over "
+        f"{HOW_SURE_WINTERS['12']} winters; Shafter (Kern) {HOW_SURE_TYPICAL_MISS_CP['5']:.1f} over "
+        f"{HOW_SURE_WINTERS['5']}, too high in {HOW_SURE_KERN_TOO_HIGH} of them. "
+        f"Worst single winter: {HOW_SURE_WORST_MISS_CP:.1f}."),
 }

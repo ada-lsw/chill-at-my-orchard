@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from scipy import stats
 
 from . import chill, config, data, decision, forecast, interp, seasons
-from .schemas import DecisionResponse, EstimateResponse, HistoryResponse
+from .schemas import DecisionResponse, EstimateResponse, GlossaryResponse, HistoryResponse
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
 METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
@@ -282,6 +282,7 @@ def estimate(
         "location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
         "as_of": str(as_of), "crop": crop, "data_source": config.DATA_SOURCE,
         "summary": decision.summary_line(vname, cp_now, vrec["target_cp"], v["band"], v["closest_season"]),
+        "how_sure": decision.how_sure_line(),
         "verdict": v,
         "target": target,
         "chill": {"start": str(c_start), "end": str(c_end), "season_complete": complete,
@@ -325,7 +326,14 @@ def validate(station_id: str, as_of: date = Query(default=date(2025, 2, 28))):
 @app.get("/varieties")
 def varieties():
     """Crop menu (in the team's order) and each variety's chill target."""
-    return {"crop_order": config.CROP_ORDER, "varieties": config.VARIETIES}
+    return {"crop_order": config.CROP_ORDER, "varieties": config.VARIETIES,
+            "crop_context": config.CROP_CONTEXT, "climate_caption": config.CLIMATE_CAPTION}
+
+
+@app.get("/glossary", response_model=GlossaryResponse)
+def glossary():
+    """One plain line explaining each number the Details layer shows (config.MEASURE_HELP)."""
+    return {"measures": config.MEASURE_HELP}
 
 
 @app.get("/decision", response_model=DecisionResponse)

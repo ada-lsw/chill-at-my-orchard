@@ -129,6 +129,10 @@ HISTORY_SEASONS = 10
 # stays on one side of zero: 95% is the usual statistics convention, approved by Ada.
 MIN_TREND_SEASONS = 5
 TREND_CONFIDENCE = 0.95
+# Default number of past winters the long view (/history) looks back, on either source; a caller's
+# max_seasons overrides it. A cap to reach FNRIC's oldest files (1982); not from a source.
+# (45 winters back from 2025-26 reaches 1980-81; winters with no saved data are listed as skipped.)
+LONG_VIEW_MAX_SEASONS = int(os.getenv("LONG_VIEW_MAX_SEASONS", 45))
 
 # Decision support. Status counts how many past seasons, added to chill so far, reach the
 # variety's target by TARGET_DATE. Draft rules from the team plan; confirm with Julia.

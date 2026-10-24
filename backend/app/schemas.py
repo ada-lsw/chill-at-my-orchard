@@ -133,7 +133,18 @@ class SeasonTotal(Open):
     season: str
     chill_portions: float
     hours_missing: int = Field(
-        description="Hours inside this winter's estimate where no neighbor station had a reading")
+        description="Hours inside this winter's estimate where no neighbor station had a reading "
+                    "(from FNRIC history: 24 x days_missing, since its daily file shows whole missing days only)")
+    days_missing: int | None = Field(
+        default=None, description="FNRIC history only: days Sept 1 to Mar 31 where no neighbor station had "
+                                  "a chill record (an FNRIC row of 0 in all four values counts as no record); "
+                                  "never filled, just left out of the total")
+    complete: bool = Field(
+        default=True, description="False if any day of this winter is missing after blending (days_missing > 0, "
+                                  "FNRIC history). Incomplete winters are listed but left out of the trend fit. "
+                                  "Always true on the stations path, which reports gaps as hours_missing only")
+    stations: list[str] | None = Field(
+        default=None, description="FNRIC history only: the stations blended for this winter, closest first")
 
 
 class SkippedSeason(Open):
@@ -156,14 +167,18 @@ class HistoryResponse(Open):
     season_end: str = Field(description="Month-day each season total is counted to")
     seasons: list[SeasonTotal]
     trend_cp_per_decade: float | None
-    source: str
+    source: str = Field(description="What the winters were built from: 'fnric' (FNRIC's daily chill history, "
+                                    "blended from nearby stations), or, on the stations path, the saved hourly "
+                                    "station data's source ('cimis' or 'synthetic'). Request source=auto picks "
+                                    "fnric with real data and the stations path with synthetic data")
     trend_sentence: str = Field(description="One plain sentence about the trend, already worded; always present")
     trend_direction: Literal["falling", "rising", "no clear change", "too few winters"] = Field(
         description="falling or rising only when the confidence range of the slope (config.TREND_CONFIDENCE, "
                     "95%) excludes zero")
     trend_line: TrendLine | None = Field(
         description="Fitted line at the first and last season; null if too few winters")
-    seasons_used: int
+    seasons_used: int = Field(description="Winters listed in seasons (complete or not)")
+    seasons_in_trend: int = Field(default=0, description="Complete winters used in the trend fit and sentence")
     seasons_skipped: list[SkippedSeason] = Field(description="Winters not counted (nothing saved, or not finished)")
 
 

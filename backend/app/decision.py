@@ -266,11 +266,14 @@ def decision_line(d: dict) -> str:
 
 
 def trend_sentence(direction: str, season_labels: list[str], per_decade: float | None,
-                   typical_cp: float | None) -> str:
+                   typical_cp: float | None, shown_labels: list[str] | None = None) -> str:
     """The long view's sentence about the trend in season-end chill (oldest season first).
 
+    season_labels are the winters in the trend fit. shown_labels (optional) are all winters shown; if a
+    later winter is shown but left out of the fit, the fitted winters are not "the last N".
     Says "fell" or "rose" only for a clear trend (main.trend_fit decides). The rate comes with its
     meaning: its share of a typical winter here (the median season total). Names no model.
+    "too few to tell" only when there are fewer than config.MIN_TREND_SEASONS winters.
     """
     n = len(season_labels)
     if n == 0:
@@ -282,7 +285,8 @@ def trend_sentence(direction: str, season_labels: list[str], per_decade: float |
         winters = f"{n} winter{'s' if n > 1 else ''}"
         return f"Only {winters} of data here ({span}), too few to tell whether chill is changing. {counted}"
     contiguous = int(last[:4]) - int(first[:4]) + 1 == n
-    if contiguous:
+    is_latest = shown_labels is None or not shown_labels or shown_labels[-1] == last
+    if contiguous and is_latest:
         lead = f"Over the last {n} winters here ({span})"
     else:
         lead = f"Over {n} winters here between {first} and {last}"
@@ -290,4 +294,4 @@ def trend_sentence(direction: str, season_labels: list[str], per_decade: float |
         verb = "fell" if direction == "falling" else "rose"
         share = f", about {round(100 * abs(per_decade) / typical_cp)}% of a typical winter here" if typical_cp else ""
         return f"{lead}, chill {verb} by about {abs(per_decade):.1f} chill portions per decade{share}. {counted}"
-    return f"{lead}, chill shows no clear rise or fall: {n} winters is too few to tell. {counted}"
+    return f"{lead}, chill shows no clear rise or fall. {counted}"

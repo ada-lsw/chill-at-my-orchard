@@ -87,13 +87,24 @@ def daily_chill(station_id: str, download: bool = False) -> pd.DataFrame:
     return daily
 
 
+def complete_days(daily: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
+    """The rows from start to end (both included) that have every value: the days with data."""
+    window = daily[(daily["Date"] >= pd.Timestamp(start)) & (daily["Date"] <= pd.Timestamp(end))]
+    return window[window[COLUMNS].notna().all(axis=1)]
+
+
+def daily_series(daily: pd.DataFrame, start: date, end: date, column: str = "portions_dynamic") -> pd.Series:
+    """One daily amount from start to end, indexed by date, days with data only (missing days are absent)."""
+    rows = complete_days(daily, start, end)
+    return pd.Series(rows[column].to_numpy(), index=pd.DatetimeIndex(rows["Date"]), name=column)
+
+
 def season_totals(daily: pd.DataFrame, start: date, end: date) -> dict:
     """Sum of each daily amount from start to end (both included), over the days with data.
 
     days: days with a complete row. days_missing: the other days of the window (no row, or empty values).
     """
-    window = daily[(daily["Date"] >= pd.Timestamp(start)) & (daily["Date"] <= pd.Timestamp(end))]
-    complete = window[window[COLUMNS].notna().all(axis=1)]
+    complete = complete_days(daily, start, end)
     days_in_window = (end - start).days + 1
     return {"days": int(len(complete)), "days_missing": days_in_window - int(len(complete)),
             **{c: float(complete[c].sum()) for c in COLUMNS}}

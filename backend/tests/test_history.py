@@ -16,7 +16,7 @@ import requests  # noqa: E402
 from scipy import stats  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import config, data, decision, main  # noqa: E402
+from app import config, data, decision, interp, main  # noqa: E402
 
 client = TestClient(main.app)
 
@@ -177,7 +177,8 @@ def test_history_never_downloads_and_lists_the_winters_it_skipped(saved_cimis_ca
     save, asked = saved_cimis_cache
     for y in range(2020, 2025):
         save(y)
-    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 15})
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 15,
+                                         "source": "stations"})
     assert r.status_code == 200, r.text
     h = r.json()
     assert asked == []                                                 # nothing was downloaded
@@ -202,7 +203,8 @@ def test_history_never_refreshes_a_saved_season_still_in_progress(saved_cimis_ca
     for path in save(this_season):
         os.utime(path, (old, old))                                    # three days old: stale
     as_of = date(this_season + 1, 10, 1)                               # in the next season
-    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": str(as_of), "max_seasons": 1})
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": str(as_of), "max_seasons": 1,
+                                         "source": "stations"})
     assert r.status_code == 200, r.text
     assert asked == []
     assert r.json()["seasons_skipped"] == [{"season": f"{this_season}-{str(this_season + 1)[-2:]}",
@@ -229,3 +231,146 @@ def test_history_on_synthetic_data_has_every_new_field():
     assert h["trend_cp_per_decade"] is not None and h["trend_line"] is not None
     assert h["trend_sentence"] and h["trend_direction"]
     assert all(s["hours_missing"] >= 0 for s in h["seasons"])
+
+
+# ---------------------------------------------------------------- long view from FNRIC daily chill (B3)
+
+FNRIC_COLUMNS = ["Date", "hours_lt_45", "hours_32_45", "units_utah", "portions_dynamic"]
+HISTORY_FIELDS = {"location", "season_end", "seasons", "trend_cp_per_decade", "source", "trend_sentence",
+                  "trend_direction", "trend_line", "seasons_used", "seasons_skipped"}
+
+
+def write_fnric(folder, station_id: str, years, portions_per_day: float, drop_days=()):
+    """Save a tiny FNRIC CSV: every day from Sept 1 to Mar 31 of each winter, the same daily portions.
+
+    drop_days: dates written as a row of empty values (how FNRIC marks a day with no data).
+    """
+    lines = [",".join(f'"{c}"' for c in FNRIC_COLUMNS)]
+    for y in years:
+        for d in pd.date_range(date(y, 9, 1), date(y + 1, 3, 31), freq="D"):
+            if d.date() in drop_days:
+                lines.append(f'"{d.date()}",,,,')
+            else:
+                lines.append(f'"{d.date()}",1.0,1.0,1.0,{portions_per_day}')
+    (folder / f"fnric_CIMIS-{station_id}.csv").write_text("\n".join(lines) + "\n")
+
+
+def _no_web(asked):
+    """A stand-in for requests.get that records the call and fails it (nothing may be downloaded)."""
+    def get(*a, **k):
+        asked.append(a)
+        raise AssertionError("the long view must never download")
+    return get
+
+
+@pytest.fixture
+def fnric_cache(tmp_path, monkeypatch):
+    """Real-data mode on a scratch cache with three stations near a pin, and every download recorded.
+
+    Station 1 sits 0.2 km from the pin (closer than interp's 0.5 km floor), 2 about 10 km, 3 about 20 km.
+    Returns (folder, stations, asked): asked lists every web request (there must be none).
+    """
+    monkeypatch.setattr(config, "DATA_SOURCE", "cimis")
+    monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
+    stations = pd.DataFrame({
+        "station_id": ["1", "2", "3"], "name": ["One", "Two", "Three"], "county": ["X"] * 3,
+        "lat": [39.6118, 39.70, 39.79], "lon": [-121.82] * 3, "elev_m": [40.0] * 3, "active": [True] * 3})
+    monkeypatch.setattr(data, "get_stations", lambda: stations.copy())
+    monkeypatch.setattr(main, "pin_elevation", lambda lat, lon, exclude=(): (40.0, "test"))
+    asked = []
+    monkeypatch.setattr(requests, "get", _no_web(asked))
+    monkeypatch.setattr(data, "_cimis_hourly", lambda *a, **k: asked.append(a) or pd.DataFrame(columns=data.CONTRACT))
+    return tmp_path, stations, asked
+
+
+def fnric_history(**params):
+    """GET /history at the fixture pin from FNRIC history; returns the JSON."""
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2023-02-01", "source": "fnric",
+                                       **params})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_fnric_blend_uses_interp_idw_weights(fnric_cache):
+    """Each day is the inverse-distance blend interp.py uses (1 / max(km, 0.5) ** IDW_POWER, NEIGHBORS stations).
+
+    Station 2 has no data on Dec 1, 2020, so that day blends stations 1 and 3 only.
+    """
+    folder, stations, _ = fnric_cache
+    values = {"1": 0.5, "2": 0.3, "3": 0.1}
+    gap = date(2020, 12, 1)
+    for sid, v in values.items():
+        write_fnric(folder, sid, [2020, 2021], v, drop_days=(gap,) if sid == "2" else ())
+    km = {r.station_id: float(interp.haversine_km(39.61, -121.82, r.lat, r.lon)) for r in stations.itertuples()}
+    assert km["1"] < 0.5                                           # the 0.5 km floor matters here
+    w = {sid: 1.0 / max(d, 0.5) ** config.IDW_POWER for sid, d in km.items()}
+
+    def blend(sids):
+        return sum(w[s] * values[s] for s in sids) / sum(w[s] for s in sids)
+    days = (date(2021, 3, 31) - date(2020, 9, 1)).days + 1
+    expected = (days - 1) * blend(["1", "2", "3"]) + blend(["1", "3"])
+    h = fnric_history()
+    by_season = {s["season"]: s for s in h["seasons"]}
+    assert by_season["2020-21"]["chill_portions"] == round(expected, 1)
+    assert by_season["2020-21"]["days_missing"] == 0              # another station covered the gap
+    assert by_season["2021-22"]["chill_portions"] == round(((date(2022, 3, 31) - date(2021, 9, 1)).days + 1)
+                                                           * blend(["1", "2", "3"]), 1)
+
+
+def test_fnric_history_keeps_every_trend_field_and_lists_skipped_winters(fnric_cache):
+    """Winters with no FNRIC data near the pin are skipped and listed; every history-trend field is there."""
+    folder, _, _ = fnric_cache
+    for sid in ("1", "2"):
+        write_fnric(folder, sid, range(2012, 2022), 0.3 + 0.01 * int(sid))
+    h = fnric_history()
+    assert HISTORY_FIELDS <= set(h)
+    assert h["seasons_used"] == 10
+    assert h["seasons"][0]["season"] == "2012-13" and h["seasons"][-1]["season"] == "2021-22"
+    skipped = [s["season"] for s in h["seasons_skipped"]]
+    assert "2011-12" in skipped and len(skipped) == config.LONG_VIEW_MAX_SEASONS - 10
+    assert all(s["reason"] for s in h["seasons_skipped"])
+    assert h["trend_direction"] in ("falling", "rising", "no clear change")
+    assert h["trend_sentence"].startswith("Over the last 10 winters here (2012-13 to 2021-22)")
+
+
+def test_fnric_missing_days_are_reported_never_filled(fnric_cache):
+    """A day no neighbor has stays out of the total and is counted in days_missing (and hours_missing)."""
+    folder, _, _ = fnric_cache
+    gap = date(2022, 1, 15)
+    for sid in ("1", "2", "3"):
+        write_fnric(folder, sid, [2021], 1.0, drop_days=(gap,))
+    s = fnric_history()["seasons"][0]
+    days = (date(2022, 3, 31) - date(2021, 9, 1)).days + 1
+    assert s["season"] == "2021-22" and s["days_missing"] == 1 and s["hours_missing"] == 24
+    assert s["chill_portions"] == days - 1
+
+
+def test_fnric_history_never_calls_the_downloader(fnric_cache, monkeypatch):
+    """/history reads FNRIC files only with download=False, and never makes a web request."""
+    folder, _, asked = fnric_cache
+    write_fnric(folder, "1", [2021], 0.4)
+    from app import fnric
+    real = fnric.daily_chill
+    calls = []
+
+    def no_download(station_id, download=False):
+        calls.append(download)
+        if download:
+            raise AssertionError("the long view must never download from FNRIC")
+        return real(station_id, download=False)
+    monkeypatch.setattr(fnric, "daily_chill", no_download)
+    h = fnric_history()
+    assert h["seasons_used"] == 1
+    assert calls and not any(calls) and asked == []
+
+
+def test_real_data_mode_defaults_to_fnric_and_reaches_back(fnric_cache):
+    """Without a source, real-data mode uses FNRIC and looks back LONG_VIEW_MAX_SEASONS winters, even when
+    the frontend asks for max_seasons=15 (that limit is for rebuilding winters from hourly data)."""
+    folder, _, _ = fnric_cache
+    write_fnric(folder, "1", range(1985, 2022), 0.4)
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2023-02-01", "max_seasons": 15})
+    assert r.status_code == 200, r.text
+    h = r.json()
+    assert h["source"] == "fnric" and h["seasons_used"] == 37
+    assert h["seasons"][0]["season"] == "1985-86"

@@ -131,7 +131,13 @@ class SeasonTotal(Open):
     season: str
     chill_portions: float
     hours_missing: int = Field(
-        description="Hours inside this winter's estimate where no neighbor station had a reading")
+        description="Hours inside this winter's estimate where no neighbor station had a reading "
+                    "(from FNRIC history: 24 x days_missing, since its daily file shows whole missing days only)")
+    days_missing: int | None = Field(
+        default=None, description="FNRIC history only: days Sept 1 to Mar 31 where no neighbor station had "
+                                  "a chill record; never filled, just left out of the total")
+    stations: list[str] | None = Field(
+        default=None, description="FNRIC history only: the stations blended for this winter, closest first")
 
 
 class SkippedSeason(Open):

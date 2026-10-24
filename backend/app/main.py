@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from scipy import stats
 
-from . import chill, config, data, decision, forecast, interp, seasons
+from . import chill, config, data, decision, fnric, forecast, interp, seasons
 from .schemas import DecisionResponse, EstimateResponse, HistoryResponse
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
@@ -361,7 +362,7 @@ def _season_total(lat, lon, elev, start: date, end: date, exclude) -> tuple[dict
 
     A winter still in progress is skipped: its saved file is refreshed daily, which downloads.
     """
-    if data.season_year(start) >= data.season_year(date.today()):
+    if not _season_finished(start):
         return None, "this winter is not finished yet"
     est, _ = estimate_at(lat, lon, elev, start, end, exclude, saved_only=True)
     est = clip(est, start, end)
@@ -369,6 +370,75 @@ def _season_total(lat, lon, elev, start: date, end: date, exclude) -> tuple[dict
         return None, "no saved station data near here for this winter"
     totals = chill.summarize(est)
     return {"chill_portions": round(totals["chill_portions"], 1), "hours_missing": totals["hours_missing"]}, None
+
+
+def _season_finished(start: date) -> bool:
+    """True once the season that starts on `start` is over (the long view only counts whole winters)."""
+    return data.season_year(start) < data.season_year(date.today())
+
+
+def _fnric_reader():
+    """A function station_id -> that station's FNRIC daily chill, read from the saved file once per request.
+
+    Always download=False: the long view never asks FNRIC for anything. A station with no saved file
+    gives an empty table, so it simply counts as having no data.
+    """
+    saved: dict[str, pd.DataFrame] = {}
+
+    def daily_of(station_id: str) -> pd.DataFrame:
+        """This station's saved FNRIC daily chill (empty if not saved)."""
+        if station_id not in saved:
+            saved[station_id] = fnric.daily_chill(station_id, download=False)
+        return saved[station_id]
+    return daily_of
+
+
+def fnric_coverage_fn(daily_of, start: date, end: date):
+    """Share of the window's days with an FNRIC chill record, per station, for interp.pick_neighbors.
+
+    Same rule as hourly data: a station counts for a winter if it has at least
+    config.MIN_NEIGHBOR_COVERAGE of the days; otherwise the next closest station takes its place.
+    """
+    def coverage(station_id: str) -> float:
+        """Share of days Sept 1 to Mar 31 with a complete FNRIC row (0.0 if none)."""
+        t = fnric.season_totals(daily_of(station_id), start, end)
+        return t["days"] / (t["days"] + t["days_missing"])
+    return coverage
+
+
+def _fnric_season_total(cands: pd.DataFrame, elev: float, start: date, end: date,
+                        daily_of) -> tuple[dict | None, str | None]:
+    """One past winter's chill portions at the pin from FNRIC's daily history: (row, None) or (None, why not).
+
+    Neighbors: the same candidate pool and walk as the app (interp.candidates, interp.pick_neighbors),
+    keeping the closest config.NEIGHBORS stations with FNRIC data that winter. Each day's chill is
+    blended with interp.estimate_series, so the weights are exactly the app's inverse-distance weights
+    (1 / max(km, 0.5) ** IDW_POWER); a station missing a day drops out of that day's weights. The
+    winter's total is the sum of the blended days. A day no neighbor has stays missing (days_missing),
+    never filled.
+
+    Limitation: FNRIC gives chill amounts, not temperatures, so the elevation adjustment can't apply
+    (lapse 0 here). The shipped setting has it off anyway (config.LAPSE_F_PER_M = 0). Blending daily
+    portions is also not quite the same as computing portions from blended temperatures.
+    """
+    if not _season_finished(start):
+        return None, "this winter is not finished yet"
+    neigh = interp.pick_neighbors(cands, fnric_coverage_fn(daily_of, start, end))
+    if neigh.empty:
+        return None, "no station near here has a chill record for this winter"
+    daily = {sid: fnric.daily_series(daily_of(sid), start, end) for sid in neigh["station_id"]}
+    blended = interp.estimate_series(daily, neigh, elev, lapse_f_per_m=0.0)
+    blended = blended.reindex(pd.date_range(start, end, freq="D"))
+    days_missing = int(blended.isna().sum())
+    return {"chill_portions": round(float(blended.sum()), 1), "hours_missing": 24 * days_missing,
+            "days_missing": days_missing, "stations": list(neigh["station_id"])}, None
+
+
+def _history_uses_fnric(source: str) -> bool:
+    """Whether the long view reads FNRIC's daily history ("auto": yes with real data, no with synthetic)."""
+    if source == "auto":
+        return config.DATA_SOURCE != "synthetic"   # FNRIC has no made-up stations
+    return source == "fnric"
 
 
 def trend_fit(rows: list[dict]) -> dict:
@@ -400,21 +470,36 @@ def trend_fit(rows: list[dict]) -> dict:
 
 @app.get("/history", response_model=HistoryResponse)
 def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory=date.today),
-                     max_seasons: int = 15, exclude: list[str] = Query(default=[])):
+                     max_seasons: int = 15, exclude: list[str] = Query(default=[]),
+                     source: Literal["auto", "fnric", "stations"] = "auto"):
     """Season-end chill portions at the pin for past seasons, with a trend (Julia's long-horizon ask).
 
-    Reads only station data already saved on this machine and never downloads, so asking for
-    many winters is safe. Winters it can't count are listed in seasons_skipped with the reason.
-    v1 rebuilds each season from hourly station data; work package B3 adds FNRIC's daily chill
-    history per station to reach back further.
+    Reads only data already saved on this machine and never downloads, so asking for many winters
+    is safe. Winters it can't count are listed in seasons_skipped with the reason.
+    source:
+    - "fnric": FNRIC's daily chill history per station (back to 1982), blended like the app's estimate.
+      Looks back config.LONG_VIEW_MAX_SEASONS winters; max_seasons does not apply, because it limits
+      rebuilding winters from hourly data, and FNRIC files are small and already summed per day.
+    - "stations": rebuild each winter from saved hourly station data, at most max_seasons winters.
+    - "auto" (default): "fnric" with real data, "stations" with synthetic data.
     """
     elev, elev_source = pin_elevation(lat, lon, exclude)
     c_start = seasons.chill_season_start(as_of)
+    use_fnric = _history_uses_fnric(source)
+    if use_fnric:
+        cands = interp.candidates(data.get_stations(), lat, lon, elev, exclude=exclude)
+        daily_of = _fnric_reader()
+
+        def season_total(s0, e0):
+            return _fnric_season_total(cands, elev, s0, e0, daily_of)
+    else:
+        def season_total(s0, e0):
+            return _season_total(lat, lon, elev, s0, e0, exclude)
     rows, skipped = [], []
-    for k in range(1, max_seasons + 1):
+    for k in range(1, (config.LONG_VIEW_MAX_SEASONS if use_fnric else max_seasons) + 1):
         s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
         label = seasons.season_label(s0.year)
-        row, reason = _season_total(lat, lon, elev, s0, e0, exclude)
+        row, reason = season_total(s0, e0)
         if row:
             rows.append({"season": label, **row})
         else:
@@ -425,7 +510,8 @@ def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory
     typical = float(np.median([r["chill_portions"] for r in rows])) if rows else None
     return {"location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
             "season_end": f"{seasons.CHILL_END[0]:02d}-{seasons.CHILL_END[1]:02d}",
-            "seasons": rows, "trend_cp_per_decade": trend["per_decade"], "source": config.DATA_SOURCE,
+            "seasons": rows, "trend_cp_per_decade": trend["per_decade"],
+            "source": "fnric" if use_fnric else config.DATA_SOURCE,
             "trend_direction": trend["direction"], "trend_line": trend["line"],
             "trend_sentence": decision.trend_sentence(trend["direction"], [r["season"] for r in rows],
                                                       trend["per_decade"], typical),

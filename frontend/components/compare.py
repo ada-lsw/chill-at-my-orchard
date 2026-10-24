@@ -1,4 +1,6 @@
 """Compare tab: this season vs. past seasons, and the next 14 days.  Owner: Frontend B."""
+from datetime import date
+
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -6,17 +8,35 @@ import streamlit as st
 def show(est: dict):
     ch, hist, proj = est["chill"], est["history"], est["projection"]
     p = hist["percentiles"].get("chill_portions", {})
+    cp, target = ch["chill_portions"], est["target"]["target_cp"]
     a1, a2, a3 = st.columns(3)
-    a1.metric("Chill so far (portions)", f"{ch['chill_portions']:.0f}", help=f"Since {ch['start']}")
+    so_far = f"Target reached ({cp:.0f} of {target:.0f})" if cp >= target else f"{cp:.0f} of {target:.0f} needed"
+    a1.metric("Chill so far", so_far,
+              help=f"Chill portions counted since {ch['start']}. Your {est['target']['variety']} trees need {target:.0f}.")
     if p:
-        a2.metric("vs. a typical year", f"{ch['chill_portions'] - p['p50']:+.0f}",
-                  help=f"Typical on this date: {p['p50']}. Normal range {p['p10']}-{p['p90']}.")
+        a2.metric("Compared with a typical year", vs_typical(cp - p["p50"]),
+                  help=f"A typical year has {p['p50']:.0f} by this date.")
     if "added" in proj:
-        a3.metric("Next 14 days", f"+{proj['added']['chill_portions']:.0f}", help=f"Method: {proj['method']}")
+        a3.metric("Next 14 days", f"about +{proj['added']['chill_portions']:.0f}",
+                  help="Chill portions likely to be added over the next two weeks.")
 
-    st.plotly_chart(build_chart(est), use_container_width=True)
+    # displayModeBar off: no tiny toolbar to tap by accident on a phone.
+    st.plotly_chart(build_chart(est), use_container_width=True, config={"displayModeBar": False})
     st.caption("Shaded band: a normal year for this date. Below it the card says low, above it high. "
                "Dotted line: last winter. Dashed line: the next 14 days, from the backend's forecast outlook.")
+
+
+def grower_date(iso: str) -> str:
+    """Show a date the way growers say it: "2025-09-01" becomes "Sep 1"."""
+    d = date.fromisoformat(iso)
+    return f"{d:%b} {d.day}"
+
+
+def vs_typical(diff: float) -> str:
+    """Show the gap to a typical year in words a grower reads at a glance, e.g. "3 less"."""
+    if round(diff) == 0:
+        return "About the same"
+    return f"{abs(diff):.0f} {'less' if diff < 0 else 'more'}"
 
 
 def build_chart(est: dict) -> go.Figure:
@@ -55,6 +75,6 @@ def build_chart(est: dict) -> go.Figure:
     fig.add_hline(y=t, line_dash="dash", line_color="#d55e00", line_width=3,
                   annotation_text=f"{est['target']['variety']} needs {t:.0f}")
     fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
-                      xaxis_title=f"Days since {ch['start']}", yaxis_title="Chill portions",
-                      legend=dict(orientation="h", y=-0.25), font=dict(size=14))
+                      xaxis_title=f"Days since {grower_date(ch['start'])}", yaxis_title="Chill portions",
+                      legend=dict(orientation="h", y=1.12, x=0), font=dict(size=14))
     return fig

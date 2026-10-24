@@ -16,7 +16,7 @@ def show(place: dict, est: dict):
     t = est["target"]["target_cp"]
     fig.add_hline(y=t, line_dash="dash", annotation_text=f"{est['target']['variety']} needs {t:.0f}")
     fig.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10), yaxis_title="Chill portions by Mar 31")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})  # no tiny toolbar on phones
     if h["trend_cp_per_decade"] is not None:
         st.caption(f"Trend: {h['trend_cp_per_decade']:+.1f} chill portions per decade "
                    f"over {len(x)} seasons. Short records make trends uncertain.")

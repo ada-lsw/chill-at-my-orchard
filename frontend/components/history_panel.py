@@ -49,7 +49,9 @@ def show(place: dict, est: dict):
     t = est["target"]["target_cp"]
     fig.add_hline(y=t, line_dash="dash", annotation_text=f"{est['target']['variety']} needs {t:.0f}")
     line = h["trend_line"]
-    if line:   # None when there are too few winters for a trend
+    # Draw the line only when the backend says the trend is clear (falling or rising). Otherwise a sloped line
+    # would contradict the sentence below ("no clear rise or fall").
+    if line and h.get("trend_direction") in ("falling", "rising"):
         ends = (line["start"], line["end"])   # the fitted straight line at the first and last season
         fig.add_trace(go.Scatter(x=[p["season"] for p in ends], y=[p["chill_portions"] for p in ends], mode="lines",
                                  line=dict(color=TREND_COLOR, dash="dot", width=2), name="Trend",

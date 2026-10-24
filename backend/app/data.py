@@ -15,7 +15,10 @@ import requests
 
 from . import config
 
-CIMIS_BASE = "https://et.water.ca.gov/api"
+CIMIS_BASE = "https://et.water.ca.gov/api"          # legacy API: still serves the station list
+CIMIS_DATA_URL = "https://et.water.ca.gov/StationWeb/GetDataByStationNumber"  # New CIMIS weather data
+# TODO(Saliha): if StationWeb/GetAllStations returns the same fields as /api/station
+# (StationNbr, Name, County, HmsLatitude, HmsLongitude, Elevation, IsActive), switch get_stations to it.
 CONTRACT = ["station_id", "lat", "lon", "elev_m", "datetime", "temp_F", "source", "is_filled"]
 
 
@@ -97,21 +100,55 @@ def season_hourly(station_id: str, year: int) -> pd.DataFrame:
     return df
 
 
-def _cimis_hourly(station_id: str, start: date, end: date) -> pd.DataFrame:
-    """One station, one season per request: CIMIS refuses very large requests."""
-    if not config.CIMIS_APP_KEY:
-        raise RuntimeError("Set CIMIS_APP_KEY in .env, or use DATA_SOURCE=synthetic")
-    params = {
-        "appKey": config.CIMIS_APP_KEY, "targets": station_id,
-        "startDate": str(start), "endDate": str(end),
-        "dataItems": "hly-air-tmp", "unitOfMeasure": "E",
-    }
-    r = requests.get(f"{CIMIS_BASE}/data", params=params,
-                     headers={"Accept": "application/json"}, timeout=120)
-    r.raise_for_status()
+class CimisVolumeError(Exception):
+    """CIMIS refused the request as too large (ERR2112 DATA VOLUME VIOLATION)."""
+
+
+def _cimis_request(station_id: str, start: date, end: date) -> list[dict]:
+    """One New CIMIS request for hourly air temperature. Returns the raw records.
+
+    New CIMIS (cimis.water.ca.gov, Web API > REST API) changed two things from the legacy API:
+    the address (StationWeb/GetDataByStationNumber with stationNbrs and isHourly), and the key,
+    which now goes in the Ocp-Apim-Subscription-Key header instead of the URL. The response
+    shape (Data > Providers > Records) is unchanged.
+    """
+    params = {"stationNbrs": station_id, "startDate": str(start), "endDate": str(end),
+              "isHourly": "true", "dataItems": "hly-air-tmp", "unitOfMeasure": "E"}
+    headers = {"Accept": "application/json", "Ocp-Apim-Subscription-Key": config.CIMIS_APP_KEY}
+    r = requests.get(CIMIS_DATA_URL, params=params, headers=headers, timeout=120)
+    if "ERR2112" in r.text:
+        raise CimisVolumeError(f"{station_id} {start}..{end}")
+    if not r.headers.get("Content-Type", "").startswith("application/json"):
+        raise RuntimeError(f"CIMIS sent back {r.headers.get('Content-Type')} instead of data "
+                           f"(status {r.status_code}). Check the key and CIMIS_DATA_URL.")
+    if r.status_code != 200:
+        raise RuntimeError(f"CIMIS error {r.status_code}: {r.text[:200]}")
     records = []
     for provider in r.json()["Data"]["Providers"]:
         records.extend(provider.get("Records", []))
+    return records
+
+
+def _cimis_records(station_id: str, start: date, end: date) -> list[dict]:
+    """Records for any window. If CIMIS says the window is too large, split it in half and retry.
+
+    So a whole season goes in one request when CIMIS allows it, and in as few pieces as needed
+    when it doesn't.
+    """
+    try:
+        return _cimis_request(station_id, start, end)
+    except CimisVolumeError:
+        if start >= end:
+            raise
+        mid = start + (end - start) // 2
+        return _cimis_records(station_id, start, mid) + _cimis_records(station_id, mid + timedelta(days=1), end)
+
+
+def _cimis_hourly(station_id: str, start: date, end: date) -> pd.DataFrame:
+    """Hourly air temperature for one station as the data contract table."""
+    if not config.CIMIS_APP_KEY:
+        raise RuntimeError("Set CIMIS_APP_KEY in .env, or use DATA_SOURCE=synthetic")
+    records = _cimis_records(station_id, start, end)
     st = get_stations().set_index("station_id").loc[station_id]
     rows = []
     for rec in records:

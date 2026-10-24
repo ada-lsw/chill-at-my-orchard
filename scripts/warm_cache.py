@@ -5,8 +5,10 @@ Run from the repo root after scripts/check_cimis.py passes:
     python scripts/warm_cache.py              # 11 seasons (this one + 10 past) for both demos
     python scripts/warm_cache.py --seasons 5  # quicker first pass
 
-For each demo orchard it caches the hold-out station and its nearest active neighbors, one
-station and one season per request (CIMIS refuses large requests), pausing between requests.
+For each demo orchard it caches the same station pool the app uses (interp.candidates): the
+stations around the pin, the hold-out station, and the stations around the hold-out (for the
+proof). Closed stations are included, because their old data helps estimate past winters.
+One station and one season per request (CIMIS refuses large requests), pausing between requests.
 Re-running skips anything already cached, so it is safe to stop and restart.
 Files land in data/cache/ (git-ignored). Copy that folder to the demo laptops.
 """
@@ -34,11 +36,18 @@ def main():
     years = list(range(this_season - args.seasons + 1, this_season + 1))
 
     wanted = set()
-    for d in config.DEMO_ORCHARDS.values():
-        near = interp.nearest(st[st["active"]], d["lat"], d["lon"], config.NEIGHBORS + 2,
-                              exclude=[d["holdout_station"]])
-        wanted.update(near["station_id"])
-        wanted.add(d["holdout_station"])
+    for key, d in config.DEMO_ORCHARDS.items():
+        hold = d["holdout_station"]
+        elev, _ = interp.pin_elevation(st, d["lat"], d["lon"])  # also saves the pin's elevation
+        pool = interp.candidates(st, d["lat"], d["lon"], elev, exclude=[hold])
+        h = st.set_index("station_id").loc[hold]
+        proof_pool = interp.candidates(st, h.lat, h.lon, h.elev_m, exclude=[hold])
+        print(f"{key}: pin pool " + ", ".join(
+            f"{r.station_id} {r['name']} ({r.dist_km:.0f} km{'' if r.active else ', closed'})"
+            for _, r in pool.iterrows()))
+        wanted.update(pool["station_id"])
+        wanted.update(proof_pool["station_id"])
+        wanted.add(hold)
 
     jobs = [(s, y) for s in sorted(wanted) for y in years]
     print(f"{len(wanted)} stations x {len(years)} seasons = {len(jobs)} station-seasons")

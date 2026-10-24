@@ -14,6 +14,13 @@ def test_health():
     assert client.get("/health").json()["ok"] is True
 
 
+def test_varieties_has_a_crop_note_for_every_crop():
+    body = client.get("/varieties").json()
+    for crop in body["crop_order"]:
+        assert body["crop_context"][crop], f"missing long-view note for {crop}"
+    assert "Zhang et al. 2021" in body["climate_caption"]
+
+
 def test_estimate_durham_replay():
     r = client.get("/estimate", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01",
                                        "exclude": ["12"], "history_seasons": 3})

@@ -252,7 +252,8 @@ def validate(station_id: str, as_of: date = Query(default=date(2025, 2, 28))):
 @app.get("/varieties")
 def varieties():
     """Crop menu (in the team's order) and each variety's chill target."""
-    return {"crop_order": config.CROP_ORDER, "varieties": config.VARIETIES}
+    return {"crop_order": config.CROP_ORDER, "varieties": config.VARIETIES,
+            "crop_context": config.CROP_CONTEXT, "climate_caption": config.CLIMATE_CAPTION}
 
 
 @app.get("/decision", response_model=DecisionResponse)

@@ -100,6 +100,31 @@ def season_hourly(station_id: str, year: int) -> pd.DataFrame:
     return df
 
 
+_COVERAGE: dict[tuple[str, str, int], float] = {}  # finished seasons never change, so remember them
+
+
+def season_coverage(station_id: str, year: int) -> float:
+    """Share of a season's hours (Sept 1 to Aug 31, or to yesterday) that have a temperature.
+
+    0.0 for a station that was closed, or not yet open, that season. Reads the season's cache
+    file, downloading it once if it isn't cached; an empty season is cached too, so a closed
+    station is never asked for the same season twice. A failed download raises.
+    """
+    key = (config.DATA_SOURCE, station_id, year)
+    if key in _COVERAGE:
+        return _COVERAGE[key]
+    s_start = date(year, 9, 1)
+    s_end = min(date(year + 1, 8, 31), date.today() - timedelta(days=1))
+    if s_end < s_start:
+        return 0.0
+    df = season_hourly(station_id, year)
+    hours = ((s_end - s_start).days + 1) * 24
+    share = float(df["temp_F"].notna().sum()) / hours if not df.empty else 0.0
+    if s_end == date(year + 1, 8, 31):
+        _COVERAGE[key] = share
+    return share
+
+
 class CimisVolumeError(Exception):
     """CIMIS refused the request as too large (ERR2112 DATA VOLUME VIOLATION)."""
 

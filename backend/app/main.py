@@ -59,9 +59,24 @@ def estimate_at(lat, lon, elev, start, end, exclude) -> tuple[pd.Series, pd.Data
     or after it closed, uses the next closest station instead.
     """
     cands = interp.candidates(data.get_stations(), lat, lon, elev, exclude=exclude)
-    hourly = load_hourly(cands["station_id"], start, end)
-    neigh = interp.pick_neighbors(hourly, cands, start, end)
+    neigh = interp.pick_neighbors(cands, season_coverage_fn(data.season_year(start)))
+    hourly = load_hourly(neigh["station_id"], start, end)
     return interp.estimate_series(hourly, neigh, elev), neigh
+
+
+def season_coverage_fn(year: int):
+    """How much of `year`'s season a station has, for interp.pick_neighbors.
+
+    A station whose data can't be loaded (offline and not cached) counts as having none,
+    so the app keeps working with Wi-Fi off; warm_cache.py makes sure that never happens
+    for the demo orchards.
+    """
+    def coverage(station_id: str) -> float:
+        try:
+            return data.season_coverage(station_id, year)
+        except Exception:
+            return 0.0
+    return coverage
 
 
 def pin_elevation(lat, lon) -> tuple[float, str]:
@@ -241,10 +256,10 @@ def validate(station_id: str, as_of: date = Query(default=date(2025, 2, 28))):
     target = stations_df.set_index("station_id").loc[station_id]
     # Same neighbor rules as the app: closest stations from the shared pool with data this winter.
     cands = interp.candidates(stations_df, target.lat, target.lon, target.elev_m, exclude=[station_id])
-    hourly = load_hourly(list(cands["station_id"]) + [station_id], c_start, c_end)
+    neigh = interp.pick_neighbors(cands, season_coverage_fn(data.season_year(c_start)))
+    hourly = load_hourly(list(neigh["station_id"]) + [station_id], c_start, c_end)
     if station_id not in hourly:
         raise HTTPException(404, f"No data for station {station_id} in {c_start}..{c_end}")
-    neigh = interp.pick_neighbors(hourly, cands, c_start, c_end)
     summarize = lambda s: chill.summarize(s)  # noqa: E731
     with_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, neighbors=neigh)
     no_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, lapse_f_per_m=0.0,

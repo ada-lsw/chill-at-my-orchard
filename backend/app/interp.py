@@ -84,30 +84,24 @@ def candidates(stations: pd.DataFrame, lat: float, lon: float, target_elev_m: fl
     return s.nsmallest(config.NEIGHBOR_CANDIDATES, "dist_km")
 
 
-def coverage(series: pd.Series | None, start, end) -> float:
-    """Share of the hours from start to end (whole days, inclusive) that have a temperature."""
-    if series is None or series.empty:
-        return 0.0
-    hours = ((pd.Timestamp(end) - pd.Timestamp(start)).days + 1) * 24
-    lo, hi = pd.Timestamp(start), pd.Timestamp(end) + pd.Timedelta(days=1)
-    inside = series[(series.index >= lo) & (series.index < hi)]
-    return float(inside.notna().sum()) / hours if hours > 0 else 0.0
+def pick_neighbors(cands: pd.DataFrame, coverage_of, k: int | None = None) -> pd.DataFrame:
+    """Walk the candidates closest first and keep the first k that have data this season.
 
-
-def pick_neighbors(hourly: dict[str, pd.Series], cands: pd.DataFrame, start, end,
-                   k: int | None = None) -> pd.DataFrame:
-    """The k closest candidates that actually have data for this window.
-
-    A station counts only if it has a temperature for at least config.MIN_NEIGHBOR_COVERAGE
-    of the window's hours. So a station that closed, or opened after this winter, is skipped
-    and the next closest one takes its place, instead of the estimate quietly shrinking to
-    two or three stations. Shorter gaps inside a station that counts are handled hour by hour
-    in estimate_series.
+    coverage_of(station_id) returns the share of the season's hours with a temperature
+    (data.season_coverage). A station counts if that share is at least
+    config.MIN_NEIGHBOR_COVERAGE, so a station that was closed, or not yet open, that winter is
+    skipped and the next closest one takes its place. The walk stops as soon as k are found,
+    so far-away stations are only looked at when closer ones have no data.
+    Shorter gaps inside a station that counts are handled hour by hour in estimate_series.
     """
     k = config.NEIGHBORS if k is None else k
-    keep = [sid for sid in cands["station_id"]
-            if coverage(hourly.get(sid), start, end) >= config.MIN_NEIGHBOR_COVERAGE]
-    return cands[cands["station_id"].isin(keep[:k])]
+    keep = []
+    for sid in cands["station_id"]:
+        if len(keep) == k:
+            break
+        if coverage_of(sid) >= config.MIN_NEIGHBOR_COVERAGE:
+            keep.append(sid)
+    return cands[cands["station_id"].isin(keep)]
 
 
 def estimate_series(hourly: dict[str, pd.Series], neighbors: pd.DataFrame,
@@ -145,14 +139,19 @@ def leave_one_out(stations: pd.DataFrame, hourly: dict[str, pd.Series], station_
 
     Returns hourly error and season-total error for each chill model.
     Run with lapse_f_per_m=0 too: that's the 'no elevation adjustment' comparison.
-    neighbors: the stations to estimate from. If not given, they are picked the same way the
-    app picks them (candidates around the hidden station that have data in `hourly`).
+    neighbors: the stations to estimate from (the app passes the ones it picked). If not given,
+    they are the closest candidates with data in `hourly` for the hidden station's hours.
     """
     target = stations.set_index("station_id").loc[station_id]
     actual = hourly[station_id]
     if neighbors is None:
         cands = candidates(stations, target.lat, target.lon, target.elev_m, exclude=[station_id])
-        neighbors = pick_neighbors(hourly, cands, actual.index.min(), actual.index.max())
+
+        def share(sid):
+            s = hourly.get(sid)
+            return 0.0 if s is None else float(s.reindex(actual.index).notna().mean())
+
+        neighbors = pick_neighbors(cands, share)
     neigh = neighbors
     est = estimate_series(hourly, neigh, target.elev_m, lapse_f_per_m)
     both = pd.concat([actual.rename("actual"), est.rename("est")], axis=1).dropna()

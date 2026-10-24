@@ -37,6 +37,8 @@ Described only, not a conclusion (few winters each):
 
 ## Does Kern's high lean shrink?
 
+Slightly: +4.8 before, +3.9 with the shipped setting, and still too high in 9 of 10 winters. No setting removes it:
+
 - elevation on, 5 neighbors, caps on: lean +4.8, too high in 9 of 10 winters
 - elevation on, 5 neighbors, caps off: lean +3.7, too high in 9 of 10 winters
 - elevation on, 3 neighbors, caps on: lean +4.0, too high in 9 of 10 winters
@@ -55,7 +57,7 @@ From the shipped setting. "Usually within X" from the typical miss alone would o
 ## Notes
 
 - With 3 neighbors, `scripts/warm_cache.py` saves 3 stations per winter. On a fresh machine, the 5-neighbor rows need `NEIGHBORS=5 python scripts/warm_cache.py` first, or they show as incomplete.
-- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 it has no elevation effect.
+- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 the made-up weather changes too: the synthetic Kern demo moves from on track to at risk. Real data is not affected.
 
 ## Numbers for the pitch
 

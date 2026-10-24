@@ -120,3 +120,22 @@ def test_outputs_are_written_only_from_real_data(vt, monkeypatch):
     monkeypatch.setattr(config, "DATA_SOURCE", "synthetic")
     with pytest.raises(SystemExit):
         vt.check_real_data()
+
+
+def test_holdout_row_never_asks_for_a_neighbor_that_is_not_saved(vt, monkeypatch):
+    """Only the hidden station is saved: no neighbor is loaded or downloaded, and the row is skipped."""
+    asked = []
+    monkeypatch.setattr(data, "is_cached", lambda sid, year: sid == "5")
+    monkeypatch.setattr(data, "season_coverage", lambda sid, year: asked.append(sid) or 1.0)
+    uncached = set()
+    row = vt.holdout_row(data.get_stations(), vt.PREVIOUS, "5", 2024, uncached)
+    assert row is None and asked == []
+    assert uncached and all(sid != "5" for sid, _ in uncached)
+
+
+def test_config_ships_the_setting_the_table_recommends(vt):
+    """config.py and pitch/validation.md can't drift apart: the shipped values are the recommended setting."""
+    shipped = vt.Setting(config.LAPSE_F_PER_M, config.NEIGHBORS, config.MAX_NEIGHBOR_KM, config.MAX_ELEV_DIFF_M)
+    md = (Path(__file__).resolve().parents[2] / "pitch" / "validation.md").read_text()
+    recommended = md.split("## Recommended setting")[1].split("**")[1]
+    assert recommended == shipped.name

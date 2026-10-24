@@ -83,7 +83,8 @@ def holdout_row(stations, setting: Setting, station_id: str, year: int, uncached
     """Hide one station for one winter and estimate it from its neighbors, from saved data only.
 
     The same steps as main.validate, except that a station-season that isn't saved counts as no data
-    and is added to `uncached` (main.validate would download it). None if the hidden station isn't saved.
+    and is added to `uncached` (main.validate would download it). None if the hidden station isn't saved,
+    or if no neighbor has saved data.
     """
     if not data.is_cached(station_id, year):
         uncached.add((station_id, year))
@@ -101,6 +102,8 @@ def holdout_row(stations, setting: Setting, station_id: str, year: int, uncached
     with applied(setting):
         cands = interp.candidates(stations, target.lat, target.lon, target.elev_m, exclude=[station_id])
         neigh = interp.pick_neighbors(cands, coverage)
+        if neigh.empty:        # nothing to estimate from: skip, never score it as a perfect estimate
+            return None
         hourly = main.load_hourly(list(neigh["station_id"]) + [station_id], start, end)
         r = interp.leave_one_out(stations, hourly, station_id, chill.summarize, neighbors=neigh)
     return {"setting": setting.name, "station": station_id, "winter": f"{year}-{str(year + 1)[-2:]}",
@@ -299,6 +302,9 @@ def write_md(path: Path, rows, uncached, scores, winner: Setting, note: str, sta
         "Described only, not a conclusion (few winters each):",
         lean_with_and_without(rows, PREVIOUS), lean_with_and_without(rows, winner), "",
         "## Does Kern's high lean shrink?", "",
+        f"Slightly: {fmt(summarize(errors_of(rows, PREVIOUS, '5'))['lean'])} before, "
+        f"{fmt(summarize(errors_of(rows, winner, '5'))['lean'])} with the shipped setting, and still too high in "
+        f"{summarize(errors_of(rows, winner, '5'))['high']} of 10 winters. No setting removes it:", "",
         *[f"- {s.name}: lean {fmt(summarize(errors_of(rows, s, '5'))['lean'])}, too high in "
           f"{summarize(errors_of(rows, s, '5'))['high']} of 10 winters" for s in settings_grid()], "",
         "## How sure: draft lines for Jina", "",
@@ -308,7 +314,8 @@ def write_md(path: Path, rows, uncached, scores, winner: Setting, note: str, sta
         "## Notes", "",
         "- With 3 neighbors, `scripts/warm_cache.py` saves 3 stations per winter. On a fresh machine, the 5-neighbor "
         "rows need `NEIGHBORS=5 python scripts/warm_cache.py` first, or they show as incomplete.",
-        "- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 it has no elevation effect.", "",
+        "- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 the made-up weather changes too: "
+        "the synthetic Kern demo moves from on track to at risk. Real data is not affected.", "",
         "## Numbers for the pitch", "", *pitch_numbers(rows, winner, stations), "",
     ]
     path.write_text("\n".join(lines))

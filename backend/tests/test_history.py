@@ -4,12 +4,14 @@ Trend rule: say chill is falling or rising only when the 95% confidence range of
 straight-line slope stays on one side of zero; otherwise say there is no clear change.
 """
 import os
-from datetime import date
+import time
+from datetime import date, timedelta
 
 os.environ["DATA_SOURCE"] = "synthetic"
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
 import requests  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -81,29 +83,41 @@ def test_fewer_than_the_minimum_winters_is_too_few():
     assert trend == {"direction": "too few winters", "per_decade": None, "line": None}
 
 
-def test_history_never_downloads_and_lists_the_winters_it_skipped(tmp_path, monkeypatch):
-    """/history reads only saved station data: winters with nothing saved are skipped and listed.
+@pytest.fixture
+def saved_cimis_cache(tmp_path, monkeypatch):
+    """Real-data mode against a scratch cache, with every download replaced by a recorder.
 
-    Real-data mode against a scratch cache that holds 5 winters for the Durham-area stations.
-    The CIMIS downloader and every web request are replaced by recorders (not errors: the app
-    catches errors, so a raise would be swallowed and this test could never fail).
+    Saves the given winters for the open stations near the Durham pin (SYN-A, B, C) and returns
+    (save, asked): save(year) writes those files; asked lists every download attempt. Recorders,
+    not errors: the app catches errors, so a raise would be swallowed and a test could never fail.
     """
     monkeypatch.setattr(config, "DATA_SOURCE", "cimis")
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(data, "_COVERAGE", {})
-    stations = data._synthetic_stations()
-    stations.to_parquet(tmp_path / "stations.parquet")
-    for sid in ("SYN-A", "SYN-B", "SYN-C"):           # the open stations near the Durham pin
-        for y in range(2020, 2025):
-            hourly = data.fill_gaps(data._synthetic_hourly(sid, date(y, 9, 1), date(y + 1, 8, 31)))
-            hourly.to_parquet(tmp_path / f"hourly_cimis_{sid}_{y}.parquet")
-
+    data._synthetic_stations().to_parquet(tmp_path / "stations.parquet")
     asked = []
     monkeypatch.setattr(data, "_cimis_hourly",
                         lambda sid, start, end: asked.append((sid, start)) or pd.DataFrame(columns=data.CONTRACT))
     monkeypatch.setattr(requests, "get", lambda *a, **k: asked.append(a) or None)
     monkeypatch.setattr(main, "pin_elevation", lambda lat, lon: (40.0, "test"))
 
+    def save(year: int) -> list:
+        """Save one winter for SYN-A, B and C; returns the file paths."""
+        paths = []
+        for sid in ("SYN-A", "SYN-B", "SYN-C"):
+            end = min(date(year + 1, 8, 31), date.today() - timedelta(days=1))
+            path = tmp_path / f"hourly_cimis_{sid}_{year}.parquet"
+            data.fill_gaps(data._synthetic_hourly(sid, date(year, 9, 1), end)).to_parquet(path)
+            paths.append(path)
+        return paths
+    return save, asked
+
+
+def test_history_never_downloads_and_lists_the_winters_it_skipped(saved_cimis_cache):
+    """/history reads only saved station data: winters with nothing saved are skipped and listed."""
+    save, asked = saved_cimis_cache
+    for y in range(2020, 2025):
+        save(y)
     r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 15})
     assert r.status_code == 200, r.text
     h = r.json()
@@ -115,6 +129,24 @@ def test_history_never_downloads_and_lists_the_winters_it_skipped(tmp_path, monk
     assert all(isinstance(s["hours_missing"], int) for s in h["seasons"])
     assert h["trend_direction"] in ("falling", "rising", "no clear change")
     assert h["trend_sentence"].startswith("Over the last 5 winters here (2020-21 to 2024-25)")
+
+
+def test_history_never_refreshes_a_saved_season_still_in_progress(saved_cimis_cache):
+    """A saved file for today's season is refreshed once a day by data.season_hourly, which downloads.
+
+    /history must skip that season instead, even when its file is a day old.
+    """
+    save, asked = saved_cimis_cache
+    this_season = data.season_year(date.today())
+    old = time.time() - 3 * 86400
+    for path in save(this_season):
+        os.utime(path, (old, old))                                    # three days old: stale
+    as_of = date(this_season + 1, 10, 1)                               # in the next season
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": str(as_of), "max_seasons": 1})
+    assert r.status_code == 200, r.text
+    assert asked == []
+    assert r.json()["seasons_skipped"] == [{"season": f"{this_season}-{str(this_season + 1)[-2:]}",
+                                            "reason": "this winter is not finished yet"}]
 
 
 def test_history_skips_a_season_that_is_not_finished():

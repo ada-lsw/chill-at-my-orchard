@@ -154,6 +154,12 @@ def _fmt_day(iso: str) -> str:
     return f"{d:%b} {d.day}"
 
 
+def _fmt_month_day(month_day: tuple[int, int]) -> str:
+    """A (month, day) setting the way growers say it: (9, 1) -> "Sep 1"."""
+    month, day = month_day
+    return f"{date(2001, month, day):%b} {day}"
+
+
 def summary_line(variety: str, so_far_cp: float, target_cp: float, verdict_band: str,
                  closest: str | None) -> str:
     """Glance-card sentence: crop and variety first, number paired with its meaning."""
@@ -200,8 +206,7 @@ def trend_sentence(direction: str, season_labels: list[str], per_decade: float |
         return "No past winters with saved data here yet."
     first, last = season_labels[0], season_labels[-1]
     span = first if n == 1 else f"{first} to {last}"
-    counted = (f"Chill is counted from {_fmt_day(date(2001, *config.CHILL_START).isoformat())} "
-               f"to {_fmt_day(date(2001, *seasons.CHILL_END).isoformat())}.")
+    counted = f"Chill is counted from {_fmt_month_day(config.CHILL_START)} to {_fmt_month_day(seasons.CHILL_END)}."
     if direction == "too few winters":
         return f"Only {n} winter{'s' if n > 1 else ''} of data here ({span}), too few to tell whether chill is changing. {counted}"
     contiguous = int(last[:4]) - int(first[:4]) + 1 == n

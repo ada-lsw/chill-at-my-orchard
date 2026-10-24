@@ -127,7 +127,8 @@ class DecisionResponse(Open):
 class SeasonTotal(Open):
     season: str
     chill_portions: float
-    hours_missing: int = Field(description="Hours inside this winter's estimate where no neighbor station had a reading")
+    hours_missing: int = Field(
+        description="Hours inside this winter's estimate where no neighbor station had a reading")
 
 
 class SkippedSeason(Open):

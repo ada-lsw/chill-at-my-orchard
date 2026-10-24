@@ -84,6 +84,35 @@ def test_direction_agrees_with_the_slope_test_on_random_winters():
         assert (main.trend_fit(rows_from(values))["direction"] != "no clear change") == (p < 0.05)
 
 
+def test_a_strong_rise_is_rising_and_the_sentence_says_rose():
+    years = np.arange(12)
+    noise = np.random.default_rng(3).normal(0, 0.5, 12)
+    rows = rows_from(58 + 1.0 * years + noise)
+    trend = main.trend_fit(rows)
+    assert trend["direction"] == "rising" and trend["per_decade"] > 0
+    sentence = decision.trend_sentence(trend["direction"], [r["season"] for r in rows], trend["per_decade"], 64.0)
+    assert "rose by about" in sentence and "fell" not in sentence
+
+
+def test_winters_with_a_gap_are_not_called_the_last_n():
+    """If a winter in the middle was skipped, the sentence names the span instead of 'the last N winters'."""
+    sentence = decision.trend_sentence("no clear change", ["2015-16", "2016-17", "2018-19", "2019-20", "2020-21"],
+                                       0.5, 60.0)
+    assert "Over 5 winters here between 2015-16 and 2020-21" in sentence and "the last" not in sentence
+
+
+def test_typical_winter_is_the_median(monkeypatch):
+    """The rate's share is of the median winter here, so one extreme winter can't move it much."""
+    rows = rows_from([50, 52, 54, 56, 100])
+    seen = {}
+    monkeypatch.setattr(main, "_season_total", lambda *a: (rows.pop(0) | {"hours_missing": 0}, None))
+    monkeypatch.setattr(main, "pin_elevation", lambda lat, lon: (40.0, "test"))
+    monkeypatch.setattr(decision, "trend_sentence",
+                        lambda direction, labels, per_decade, typical: seen.setdefault("typical", typical) and "")
+    client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 5})
+    assert seen["typical"] == 54.0                     # the mean would be 62.4
+
+
 def test_no_clear_change_sentence_says_too_few_winters_to_tell():
     sentence = decision.trend_sentence("no clear change", ["2015-16", "2016-17", "2017-18", "2018-19",
                                                            "2019-20", "2020-21"], -1.2, 60.0)

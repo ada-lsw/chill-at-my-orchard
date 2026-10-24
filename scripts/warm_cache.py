@@ -27,12 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 os.environ.setdefault("DATA_SOURCE", "cimis")
 
 from app import config, data, interp  # noqa: E402
+from app.seasons import season_label  # noqa: E402
 from app.main import hide_key  # noqa: E402
-
-
-def season_label(year: int) -> str:
-    """A season the way the app writes it: 2024 -> "2024-25"."""
-    return f"{year}-{str(year + 1)[-2:]}"
 
 
 def seasons_to_cache(as_of: date, today: date) -> list[int]:

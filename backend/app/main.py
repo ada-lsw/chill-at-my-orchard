@@ -46,7 +46,7 @@ def _warn_skipped(station_id: str, year: int, error: Exception) -> None:
     """
     logging.getLogger(__name__).warning(
         "Station %s, season %s: skipped, data could not load (%s: %s)",
-        station_id, f"{year}-{str(year + 1)[-2:]}", type(error).__name__, hide_key(str(error)))
+        station_id, seasons.season_label(year), type(error).__name__, hide_key(str(error)))
 
 
 def load_hourly(station_ids, start: date, end: date) -> dict[str, pd.Series]:
@@ -178,7 +178,7 @@ def past_scenarios(lat, lon, elev, exclude, as_of: date, until: date, n: int) ->
         before = cum[cum.index <= pd.Timestamp(a0)]
         base = float(before.iloc[-1]) if not before.empty else 0.0  # chill on the shifted as_of date
         after = cum[cum.index >= pd.Timestamp(a0)]
-        out.append({"season": f"{s0.year}-{str(s0.year + 1)[-2:]}",
+        out.append({"season": seasons.season_label(s0.year),
                     "added_by_day": [round(float(v) - base, 2) for v in after]})
     return out
 
@@ -240,7 +240,7 @@ def estimate(
         at_date = chill.summarize(clip(h_est, h_start, h_end), crop)
         plus14 = chill.summarize(clip(h_est, h_start, seasons.plus_days(h_end, 14)), crop)
         history.append({
-            "season": f"{h_start.year}-{str(h_start.year + 1)[-2:]}",
+            "season": seasons.season_label(h_start.year),
             "at_date": {m: round(at_date[m], 1) for m in METRICS},
             "next_14_days": {m: round(plus14[m] - at_date[m], 1) for m in METRICS},
             "curve": daily_curve(clip(h_est, h_start, seasons.plus_days(h_end, 14))),
@@ -417,7 +417,7 @@ def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory
     rows, skipped = [], []
     for k in range(1, max_seasons + 1):
         s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
-        label = f"{s0.year}-{str(s0.year + 1)[-2:]}"
+        label = seasons.season_label(s0.year)
         row, reason = _season_total(lat, lon, elev, s0, e0, exclude)
         if row:
             rows.append({"season": label, **row})

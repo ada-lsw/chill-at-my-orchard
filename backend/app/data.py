@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 import zlib
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -54,15 +54,44 @@ def get_stations() -> pd.DataFrame:
 
 # ---------------------------------------------------------------- hourly data
 
+def season_year(d: date) -> int:
+    """Chill seasons run Sept 1 to Aug 31; a season is named by the year it starts."""
+    return d.year if d.month >= 9 else d.year - 1
+
+
 def get_hourly(station_id: str, start: date, end: date) -> pd.DataFrame:
-    """Hourly air temperature for one station, cached per station and range."""
-    cache = config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{station_id}_{start}_{end}.parquet"
+    """Hourly air temperature for one station between start and end (inclusive).
+
+    Cached as one file per station per season (Sept 1 to Aug 31), the size CIMIS accepts in
+    one request. Any window is then sliced from those files, so endpoints asking for slightly
+    different dates never trigger new downloads. The current season's file is refreshed once
+    a day, because it is still growing.
+    """
+    frames = [season_hourly(station_id, y) for y in range(season_year(start), season_year(end) + 1)]
+    frames = [f for f in frames if not f.empty]
+    if not frames:
+        return pd.DataFrame(columns=CONTRACT)
+    df = pd.concat(frames, ignore_index=True)
+    lo, hi = pd.Timestamp(start), pd.Timestamp(end) + pd.Timedelta(days=1)
+    return df[(df["datetime"] >= lo) & (df["datetime"] < hi)].reset_index(drop=True)
+
+
+def season_hourly(station_id: str, year: int) -> pd.DataFrame:
+    """One station, one whole season, from cache or one download."""
+    s_start = date(year, 9, 1)
+    s_end = min(date(year + 1, 8, 31), date.today() - timedelta(days=1))
+    if s_end < s_start:
+        return pd.DataFrame(columns=CONTRACT)
+    current = s_end < date(year + 1, 8, 31)
+    cache = config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{station_id}_{year}.parquet"
     if cache.exists():
-        return pd.read_parquet(cache)
+        fresh = (date.today() - date.fromtimestamp(cache.stat().st_mtime)).days < 1
+        if not current or fresh:
+            return pd.read_parquet(cache)
     if config.DATA_SOURCE == "synthetic":
-        df = _synthetic_hourly(station_id, start, end)
+        df = _synthetic_hourly(station_id, s_start, s_end)
     else:
-        df = _cimis_hourly(station_id, start, end)
+        df = _cimis_hourly(station_id, s_start, s_end)
     df = fill_gaps(df)
     df.to_parquet(cache)
     return df
@@ -128,6 +157,10 @@ _SYN = [  # station_id, name, county, lat, lon, elev_m  (approximate locations)
     ("SYN-B", "Synthetic Biggs", "Butte", 39.42, -121.71, 30),
     ("SYN-C", "Synthetic Colusa", "Colusa", 39.23, -122.02, 18),
     ("SYN-D", "Synthetic Foothill", "Placer", 38.95, -121.10, 450),
+    ("SYN-E", "Synthetic Lost Hills", "Kern", 35.62, -119.69, 85),
+    ("SYN-F", "Synthetic Delano", "Kern", 35.77, -119.25, 95),
+    ("SYN-G", "Synthetic Arvin", "Kern", 35.21, -118.83, 150),
+    ("SYN-H", "Synthetic Kettleman", "Kings", 36.00, -119.96, 120),
 ]
 
 

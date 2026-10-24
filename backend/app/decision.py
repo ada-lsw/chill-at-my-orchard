@@ -221,6 +221,27 @@ def summary_line(variety: str, so_far_cp: float, target_cp: float, verdict_band:
     return f"Your {variety} trees have {amount} ({progress_pct(so_far_cp, target_cp)}%). {band_words}{like}."
 
 
+MILES_PER_KM = 0.621371
+
+
+def station_note(neighbors: list[dict]) -> str | None:
+    """A plain warning when this winter's estimate rests on fewer stations than usual (config.NEIGHBORS).
+
+    neighbors: the stations used this winter, each with dist_km. None when there are the usual number,
+    so the screen shows nothing. Our accuracy tests (pitch/validation.md) used config.NEIGHBORS stations,
+    so with fewer the estimate can be further off than they show; the sentence says that, not a number.
+    """
+    n = len(neighbors)
+    if n == 0 or n >= config.NEIGHBORS:
+        return None
+    km = min(float(s["dist_km"]) for s in neighbors)
+    where = f"about {km * MILES_PER_KM:.0f} miles ({km:.0f} km) away"
+    which = (f"only 1 weather station with data this winter, {where}" if n == 1
+             else f"only {n} weather stations with data this winter, the closest {where}")
+    return (f"This estimate uses {which}. Our accuracy tests used {config.NEIGHBORS}, "
+            f"so these numbers may be further off than those tests show.")
+
+
 def round_to_half(x: float) -> float:
     """Round to the nearest half, the way growers read a number: 3.52 -> 3.5, 2.43 -> 2.5."""
     return round(x * 2) / 2

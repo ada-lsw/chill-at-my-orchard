@@ -147,7 +147,7 @@ def resolve_variety(variety: str | None, crop: str | None) -> tuple[str, dict]:
 
 def target_block(name: str, v: dict, so_far_cp: float) -> dict:
     return {"variety": name, "crop": v["crop"], "target_cp": v["target_cp"], "range_cp": v["range_cp"],
-            "progress_pct": round(100.0 * so_far_cp / v["target_cp"], 0), "note": v["note"]}
+            "progress_pct": decision.progress_pct(so_far_cp, v["target_cp"]), "note": v["note"]}
 
 
 def past_scenarios(lat, lon, elev, exclude, as_of: date, until: date, n: int) -> list[dict]:

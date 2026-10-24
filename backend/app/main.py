@@ -67,11 +67,18 @@ def estimate_at(lat, lon, elev, start, end, exclude) -> tuple[pd.Series, pd.Data
 def season_coverage_fn(year: int):
     """How much of `year`'s season a station has, for interp.pick_neighbors.
 
-    A station whose data can't be loaded (offline and not cached) counts as having none,
-    so the app keeps working with Wi-Fi off; warm_cache.py makes sure that never happens
-    for the demo orchards.
+    Two guards keep the app from flooding CIMIS:
+    - A closed station that isn't cached counts as having no data, without downloading.
+      Most closed stations near our pins have no data since 2016, and warm_cache.py has
+      already cached the ones the demo orchards need.
+    - A station whose data can't be loaded (offline and not cached) counts as having none,
+      so the app keeps working with Wi-Fi off.
     """
+    active = data.get_stations().set_index("station_id")["active"]
+
     def coverage(station_id: str) -> float:
+        if not bool(active.get(station_id, False)) and not data.is_cached(station_id, year):
+            return 0.0
         try:
             return data.season_coverage(station_id, year)
         except Exception:

@@ -98,3 +98,15 @@ def test_pin_elevation_is_saved_for_offline_use(tmp_path, monkeypatch):
     monkeypatch.setattr(interp.requests, "get", offline)
     assert interp.elevation_m(39.61, -121.82) == 123.0
     assert len(calls) == 1
+
+
+def test_app_never_downloads_an_uncached_closed_station(monkeypatch):
+    """A closed station counts as 'no data' unless it is already cached: no CIMIS request."""
+    from app import data, main
+    monkeypatch.setattr(data, "is_cached", lambda sid, year: False)
+
+    def must_not_download(*args, **kwargs):
+        raise AssertionError("tried to download a closed station")
+
+    monkeypatch.setattr(data, "season_coverage", must_not_download)
+    assert main.season_coverage_fn(2024)("12") == 0.0    # Durham (12) is closed

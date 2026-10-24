@@ -100,6 +100,11 @@ def season_hourly(station_id: str, year: int) -> pd.DataFrame:
     return df
 
 
+def is_cached(station_id: str, year: int) -> bool:
+    """True if this station's season is already in data/cache/ (no download needed)."""
+    return (config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{station_id}_{year}.parquet").exists()
+
+
 _COVERAGE: dict[tuple[str, str, int], float] = {}  # finished seasons never change, so remember them
 
 

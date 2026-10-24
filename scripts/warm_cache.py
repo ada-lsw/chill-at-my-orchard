@@ -40,7 +40,7 @@ def main():
 
     def coverage(sid, year):
         """data.season_coverage, pausing after any real download so CIMIS isn't flooded."""
-        cached = (config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{sid}_{year}.parquet").exists()
+        cached = data.is_cached(sid, year)
         share = data.season_coverage(sid, year)
         if not cached:
             time.sleep(args.pause)

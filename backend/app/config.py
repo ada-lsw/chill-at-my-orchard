@@ -182,3 +182,36 @@ DEMO_ORCHARDS = {
         "as_of": "2026-02-01",
     },
 }
+
+# ---------------------------------------------------------------- Details layer explanations
+# One plain line for every number the Details layer ("Show the numbers") shows; served by /glossary.
+# Each line restates a definition already in the repo (chill.py docstrings and Utah bins,
+# CLAUDE.md domain rules, the settings above). Model names are allowed here: this is the
+# Details layer. Never rates, mixes, application steps or dates for treatments (PCA guardrail).
+MEASURE_HELP = {
+    "chill_start": "Every chill number here counts from this date.",
+    "chill_portions": ("Winter chill counted with the Dynamic Model, the same unit as your variety's "
+                       "chill target."),
+    "chill_hours": "Hours when the air was above 32°F and at or below 45°F.",
+    "hours_lt_45": "Hours when the air was at or below 45°F, freezing hours included.",
+    "utah_units": ("Utah model: each hour adds chill by its temperature, most between 36°F and 48°F, "
+                   "and hours above 60°F take chill away."),
+    "gdd": ("Warmth added up day by day since bloom, in °C-days, counting only warmth between the "
+            "limits shown (single-sine method). The bloom date is an assumption, not your orchard's."),
+    "custom_below": "Hours at or below the low end of your temperature range.",
+    "custom_between": "Hours above the low end of your range and at or below the high end.",
+    "custom_above": "Hours above the high end of your temperature range.",
+    "hours_missing": (f"Hours with no reading from any nearby station, even after gaps of up to "
+                      f"{MAX_FILL_HOURS} hours were filled in. Hour and unit counts skip them; "
+                      f"chill portions carry the last reading forward."),
+    "neighbors": (f"Weather stations within {MAX_NEIGHBOR_KM:.0f} km of your orchard that had data "
+                  f"this winter; nearer stations count more in the estimate."),
+    "elevation": (f"Your orchard's height above sea level. Only stations within {MAX_ELEV_DIFF_M:.0f} m "
+                  f"above or below it are used."),
+    "proof_actual": "Chill portions the real station measured that season. We hid it from the estimate.",
+    "proof_estimate": ("What we estimated at that spot from its neighbor stations alone. The small number "
+                       "is how far off we were."),
+    "proof_hourly_error": ("How far off our hourly temperatures typically were at that station, in °F "
+                           "(root mean square error)."),
+    "proof_no_elevation": "The same check without adjusting temperatures for differences in height.",
+}

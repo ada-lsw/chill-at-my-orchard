@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Query
 from scipy import stats
 
 from . import chill, config, data, decision, forecast, interp, seasons
-from .schemas import DecisionResponse, EstimateResponse, HistoryResponse
+from .schemas import DecisionResponse, EstimateResponse, GlossaryResponse, HistoryResponse
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
 METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
@@ -327,6 +327,12 @@ def varieties():
     """Crop menu (in the team's order) and each variety's chill target."""
     return {"crop_order": config.CROP_ORDER, "varieties": config.VARIETIES,
             "crop_context": config.CROP_CONTEXT, "climate_caption": config.CLIMATE_CAPTION}
+
+
+@app.get("/glossary", response_model=GlossaryResponse)
+def glossary():
+    """One plain line explaining each number the Details layer shows (config.MEASURE_HELP)."""
+    return {"measures": config.MEASURE_HELP}
 
 
 @app.get("/decision", response_model=DecisionResponse)

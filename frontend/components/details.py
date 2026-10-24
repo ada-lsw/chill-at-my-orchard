@@ -1,21 +1,65 @@
-"""Details layer ("Show the numbers"): every measure, accuracy, sources.  Owner: Frontend B."""
+"""Details layer ("Show the numbers"): every measure, accuracy, sources.  Owner: Frontend B.
+
+Every number has a one-line explanation in its tooltip (the "?" next to it). The explanations
+are written in the backend (config.MEASURE_HELP, served by /glossary); this file only shows them.
+"""
+from datetime import date
+
 import streamlit as st
 
 from api import get
 
 
-def show(place: dict, est: dict, dec: dict):
-    ch = est["chill"]
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Chill portions", f"{ch['chill_portions']:.1f}", help="Dynamic Model. FNRIC calls it more a research tool than a rule.")
-    m2.metric("Chill hours (32-45°F)", f"{ch['chill_hours']:.0f}")
-    m3.metric("Utah chill units", f"{ch['utah_units']:.0f}", help="Warm hours subtract units")
-    g = est["gdd"]
-    m4.metric("GDD since bloom", f"{g['total_c_days']:.0f}" if g["started"] else "Not yet",
-              help=f"Single sine, 5-35°C, from {g['start']} (assumed bloom date)")
-    st.caption(f"Counting since {ch['start']} · {ch['hours_missing']} missing hours · "
-               f"estimated from {len(est['neighbors'])} nearby stations · elevation {est['location']['elev_m']} m")
+def help_for(key: str) -> str:
+    """The plain one-line explanation of a measure, from the backend's /glossary."""
+    return get("/glossary")["measures"][key]
 
+
+def _day(iso: str) -> str:
+    """'2025-09-01' -> 'Sep 1', the way growers write dates."""
+    d = date.fromisoformat(iso)
+    return f"{d:%b} {d.day}"
+
+
+def show(place: dict, est: dict, dec: dict):
+    """Draw the Details layer: the measures, the grower's range, options for a PCA, and the proof."""
+    _measures(est)
+    _custom_range(est["chill"]["custom_range"])
+    _pca_options(dec)
+    _proof(place.get("holdout_station"))
+
+
+def _measures(est: dict):
+    """Chill, heat and data-quality numbers, each with its explanation as a tooltip."""
+    ch, g = est["chill"], est["gdd"]
+    st.caption(f"Counting since {_day(ch['start'])}", help=help_for("chill_start"))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Chill portions", f"{ch['chill_portions']:.1f}", help=help_for("chill_portions"))
+    m2.metric("Chill hours (32-45°F)", f"{ch['chill_hours']:.0f}", help=help_for("chill_hours"))
+    m3.metric("Hours at or below 45°F", f"{ch['hours_lt_45']:.0f}", help=help_for("hours_lt_45"))
+    m4.metric("Utah chill units", f"{ch['utah_units']:.0f}", help=help_for("utah_units"))
+
+    lo, hi = g["thresholds_c"]
+    m5, m6, m7, m8 = st.columns(4)
+    m5.metric(f"GDD since {_day(g['start'])} ({lo:g}-{hi:g}°C)",
+              f"{g['total_c_days']:.0f}" if g["started"] else "Not yet", help=help_for("gdd"))
+    m6.metric("Hours missing", f"{ch['hours_missing']}", help=help_for("hours_missing"))
+    m7.metric("Nearby stations used", f"{len(est['neighbors'])}", help=help_for("neighbors"))
+    m8.metric("Orchard elevation", f"{est['location']['elev_m']:.0f} m", help=help_for("elevation"))
+
+
+def _custom_range(r: dict):
+    """Hours below, inside and above the grower's own temperature range."""
+    lo, hi = r["low_f"], r["high_f"]
+    st.markdown(f"**Your temperature range: {lo:g}°F to {hi:g}°F**")
+    c1, c2, c3 = st.columns(3)
+    c1.metric(f"Hours at or below {lo:g}°F", f"{r['hours_below']:.0f}", help=help_for("custom_below"))
+    c2.metric(f"Hours {lo:g}-{hi:g}°F", f"{r['hours_between']:.0f}", help=help_for("custom_between"))
+    c3.metric(f"Hours above {hi:g}°F", f"{r['hours_above']:.0f}", help=help_for("custom_above"))
+
+
+def _pca_options(dec: dict):
+    """What low chill can do, option types to raise with a PCA (with sources), and the guardrail."""
     st.markdown("**What low chill can do:** " + ", ".join(dec["low_chill_symptoms"]) + ".")
     if dec["options"]:
         st.markdown("**Options to raise with your PCA:**")
@@ -23,14 +67,23 @@ def show(place: dict, est: dict, dec: dict):
             st.markdown(f"- {o['type']}: {o['detail']} ([source]({o['source']}))")
     st.caption(dec["guardrail"])
 
-    station = place.get("holdout_station")
-    if station:
-        st.markdown("**How accurate is this?** We hid the real station and estimated it from its neighbors.")
-        v = get("/validate", station_id=station)
-        w, n = v["with_elevation_adjustment"], v["no_elevation_adjustment"]
-        b1, b2, b3 = st.columns(3)
-        b1.metric("Actual chill portions", f"{w['actual']['chill_portions']:.1f}")
-        b2.metric("Our estimate", f"{w['estimated']['chill_portions']:.1f}",
-                  f"{w['error']['chill_portions']:+.1f}", delta_color="off")
-        b3.metric("Hourly error", f"{w['hourly_rmse_F']} °F")
-        st.caption(f"Season {v['season']}. Without the elevation adjustment: {n['error']['chill_portions']:+.1f} portions.")
+
+def _proof(station: str | None):
+    """Accuracy check: hide the real station, estimate it from its neighbors, compare."""
+    if not station:
+        return
+    st.markdown("**How accurate is this?** We hid the real station and estimated it from its neighbors.")
+    v = get("/validate", station_id=station)
+    w, n = v["with_elevation_adjustment"], v["no_elevation_adjustment"]
+    b1, b2, b3 = st.columns(3)
+    b1.metric("Actual chill portions", f"{w['actual']['chill_portions']:.1f}", help=help_for("proof_actual"))
+    b2.metric("Our estimate", f"{w['estimated']['chill_portions']:.1f}",
+              f"{w['error']['chill_portions']:+.1f}", delta_color="off", help=help_for("proof_estimate"))
+    b3.metric("Hourly error", f"{w['hourly_rmse_F']} °F", help=help_for("proof_hourly_error"))
+    # The shipped setting has no elevation adjustment (config.LAPSE_F_PER_M = 0), so both runs are identical.
+    # Show the comparison only when the two numbers actually differ.
+    if n["error"]["chill_portions"] != w["error"]["chill_portions"]:
+        st.caption(f"Season {v['season']}. Without the elevation adjustment: {n['error']['chill_portions']:+.1f} portions.",
+                   help=help_for("proof_no_elevation"))
+    else:
+        st.caption(f"Season {v['season']}.")

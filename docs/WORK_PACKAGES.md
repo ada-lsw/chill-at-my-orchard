@@ -43,8 +43,8 @@ Goal: real numbers for both demo stories, and the proof that they are accurate.
 
 | # | Task | Done when |
 |---|---|---|
-| A1 | Run `python scripts/check_cimis.py` in a Codespace. If step 4 fails, fix the field names in `data._cimis_hourly` to match a real response. | All four checks pass |
-| A2 | Run `python scripts/warm_cache.py`. Confirm CIMIS accepts a whole season (Sept 1 to Aug 31) per request; if it refuses, split `season_hourly` into two half-season requests. | Both demos load with Wi-Fi off |
+| A1 | Run `python scripts/check_cimis.py` in a Codespace. Uses the New CIMIS API (see CLAUDE.md, CIMIS API). | All four checks pass |
+| A2 | Run `python scripts/warm_cache.py`. Requests that are too large split themselves automatically. | Both demos load with Wi-Fi off |
 | A3 | Pick the real Kern pin (a pistachio area) and confirm Shafter (5) as the hold-out. Update `config.DEMO_ORCHARDS`. | Kern demo shows real neighbors |
 | A4 | `scripts/validation_table.py`: run `/validate` for every cached station; write `pitch/validation.csv` and a short table. Try `NEIGHBORS` 3 vs 5 and the lapse rate on vs off; ship the lowest error. | The proof table exists, with the settings we ship |
 | A5 | Hourly-from-daily (Julia's ask): `backend/app/hourly_from_daily.py`, a port of chillR's `make_hourly_temps` (sine curve by day, logarithmic decay at night, sunrise and sunset from latitude; Linvill 1990). Add a daily-only comparison to `/validate`. Tag rebuilt rows `source="daily"`. | Chill error from daily-only data is in the proof table |

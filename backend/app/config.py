@@ -16,7 +16,9 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 # "cimis" = real data from the CIMIS API (needs CIMIS_APP_KEY).
 # "synthetic" = generated fake data so the frontend can be built before real data lands.
 DATA_SOURCE = os.getenv("DATA_SOURCE", "synthetic")
-CIMIS_APP_KEY = os.getenv("CIMIS_APP_KEY", "")
+# New CIMIS "Web API App Key" from your cimis.water.ca.gov account page (32 characters).
+# Sent as a header, never in a URL. Stray quotes or spaces from copy-paste are stripped.
+CIMIS_APP_KEY = os.getenv("CIMIS_APP_KEY", "").strip().strip('"').strip("'")
 
 TIMEZONE = "America/Los_Angeles"
 

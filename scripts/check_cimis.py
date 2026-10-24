@@ -30,6 +30,10 @@ def main():
     step(1, "CIMIS key")
     if not config.CIMIS_APP_KEY:
         sys.exit("    FAIL: CIMIS_APP_KEY is not set. Add it as a Codespaces secret or in .env.")
+    k = config.CIMIS_APP_KEY
+    if len(k) != 32:
+        print(f"    warning: key is {len(k)} characters; New CIMIS Web API keys are 32. Copy it again from "
+              "'Web API App Key' on your cimis.water.ca.gov account page.")
     print("    ok: key is set")
 
     step(2, "Station list")
@@ -54,10 +58,11 @@ def main():
     try:
         df = data._cimis_hourly("6", day, day)
     except Exception as e:  # noqa: BLE001
-        sys.exit(f"    FAIL: hourly request did not work: {e}")
+        sys.exit(f"    FAIL: hourly request did not work: {e}\n"
+                 "    Common causes: a key from the legacy site (use the New CIMIS key), or a typo in .env.")
     if df.empty or df["temp_F"].isna().all():
-        sys.exit("    FAIL: request worked but no temperatures parsed. The field names in "
-                 "data._cimis_hourly may not match CIMIS's response; tell the backend owner.")
+        sys.exit("    FAIL: request worked but no temperatures parsed. Station 6 may have had an outage "
+                 "that day; if it repeats, tell the backend owner.")
     print(f"    ok: {len(df)} hours, {df['temp_F'].min():.1f} to {df['temp_F'].max():.1f} °F on {day}")
     print("\nAll checks passed. Next: python scripts/warm_cache.py")
 

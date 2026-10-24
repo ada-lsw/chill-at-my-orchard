@@ -45,5 +45,9 @@ def get(path: str, **params):
         r = requests.get(f"{API}{path}", params=params, timeout=300)
     else:
         r = _backend().get(path, params=params)
+    if 400 <= getattr(r, "status_code", 200) < 500:
+        # The backend explains in plain words (e.g. no station data near this spot); show that, not a traceback.
+        st.info(r.json().get("detail", "This spot can't be shown yet."))
+        st.stop()
     r.raise_for_status()
     return r.json()

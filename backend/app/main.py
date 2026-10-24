@@ -24,6 +24,12 @@ from . import chill, config, data, decision, forecast, interp, seasons
 from .schemas import DecisionResponse, EstimateResponse, GlossaryResponse, HistoryResponse
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
+
+
+def no_station_data_message() -> str:
+    """Plain words for a spot with no saved station data nearby (shown to the grower as is)."""
+    return (f"We don't have saved weather station data within {config.MAX_NEIGHBOR_KM:.0f} km of this spot "
+            "for this winter yet. Try one of the demo orchards above.")
 METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
 
 
@@ -210,7 +216,7 @@ def estimate(
     c_start, c_end, complete = seasons.chill_window(as_of)
     est, neigh = estimate_at(lat, lon, elev, c_start, c_end, exclude)
     if est.dropna().empty:
-        raise HTTPException(404, "No station data near this point for this season")
+        raise HTTPException(404, no_station_data_message())
     est = clip(est, c_start, c_end)
     so_far = chill.summarize(est, crop, custom_range=(range_low_f, range_high_f))
 
@@ -355,7 +361,7 @@ def decision_endpoint(
     est, _ = estimate_at(lat, lon, elev, c_start, as_of, exclude)
     est = clip(est, c_start, as_of)
     if est.dropna().empty:
-        raise HTTPException(404, "No station data near this point for this season")
+        raise HTTPException(404, no_station_data_message())
     so_far_cp = float(chill.chill_portions(est)[-1])
     tdate = decision.target_date_for(as_of)
     scen = past_scenarios(lat, lon, elev, exclude, as_of, tdate, history_seasons) if as_of < tdate else []

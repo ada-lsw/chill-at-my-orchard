@@ -47,9 +47,17 @@ def test_one_app_mode_gives_the_same_json_as_the_api(monkeypatch):
 
 def test_a_missing_value_is_left_out_like_over_http(monkeypatch):
     """requests drops a parameter whose value is None; one-app mode must do the same (not send 'as_of=')."""
+    sent = []
+
+    class Recorder:
+        def get(self, path, params):
+            sent.append(params)
+            return TestClient(main.app).get(path, params=params)
+
     monkeypatch.setattr(api, "API", None)
-    with_none = api.get("/demo", unused=None)
-    assert with_none == config.DEMO_ORCHARDS
+    monkeypatch.setattr(api, "_backend", lambda: Recorder())
+    api.get("/estimate", **{**PARAMS, "range_low_f": None})
+    assert sent and "range_low_f" not in sent[0]
 
 
 def test_backend_url_still_means_http(monkeypatch):
@@ -92,3 +100,15 @@ def test_both_demo_buttons_work_in_one_app_mode(tmp_path):
     run = subprocess.run([sys.executable, "-c", APPTEST], cwd=FRONTEND, env=env, capture_output=True, text=True,
                          timeout=600)
     assert "BOTH DEMOS OK" in run.stdout, run.stdout[-2000:] + run.stderr[-2000:]
+
+
+def test_a_backend_error_is_not_hidden_in_one_app_mode(monkeypatch):
+    """A crash in the backend surfaces as the real error (and in the server log), not a bare 500."""
+    monkeypatch.setattr(api, "API", None)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("backend broke here")
+
+    monkeypatch.setattr(main, "resolve_variety", broken)
+    with pytest.raises(RuntimeError, match="backend broke here"):
+        api.get("/estimate", **PARAMS)

@@ -31,7 +31,7 @@ def _backend():
     sys.path.insert(0, str(BACKEND_DIR))
     from fastapi.testclient import TestClient
     from app.main import app
-    return TestClient(app, raise_server_exceptions=False)   # a backend error becomes a 500, as over HTTP
+    return TestClient(app)    # a backend error is raised with its real traceback (shown in the app and the logs)
 
 
 @st.cache_data(show_spinner=False)

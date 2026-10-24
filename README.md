@@ -74,11 +74,13 @@ Steps on [share.streamlit.io](https://share.streamlit.io):
    in the environment where `backend/app/config.py` reads them:
    ```toml
    DATA_SOURCE = "cimis"
-   CIMIS_APP_KEY = "your-key"
    ```
-   Never put the key anywhere else; secrets stay out of the repo.
-3. Community Cloud installs the requirements file next to the main file (`frontend/requirements.txt`) before the
-   repo root's, so that file must also pull in the backend's packages.
+   **No CIMIS key for now.** With a key, a pin dropped outside the saved data makes dozens of CIMIS requests in a row
+   (about 90 for one pin near Fresno), and Cloud's disk is wiped when the app sleeps, so they repeat. Without the key,
+   the demos run from the saved files, and other pins use whatever is saved. Add `CIMIS_APP_KEY` only after the
+   neighbor walk is capped (the team decides); never put the key anywhere else.
+3. Community Cloud installs the requirements file next to the main file (`frontend/requirements.txt`) **instead of**
+   the repo root's, so that file must also pull in the backend's packages with the line `-r ../backend/requirements.txt`.
 4. Make a QR code of the app's public URL for the table card.
 
 ## How it's built

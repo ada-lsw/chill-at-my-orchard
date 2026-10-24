@@ -1,3 +1,5 @@
+# One-app mode (Streamlit Cloud) runs the backend in this process, so it needs the backend's packages too.
+-r ../backend/requirements.txt
 streamlit==1.40.*
 streamlit-folium==0.23.*
 folium==0.18.*

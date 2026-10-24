@@ -146,7 +146,7 @@ DEMO_ORCHARDS = {
         "as_of": "2026-02-01",    # replay the first winter with no Durham station
     },
     "kern": {
-        "label": "Kern pistachios (far from a station)",
+        "label": "Kern pistachios near Shafter (station hidden to test the estimate)",
         # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list). The
         # hold-out proof (/validate for station 5) hides Shafter and measures the estimate's error
         # at exactly this spot; the demo itself shows Shafter's real data (Ada's decision, Oct 24).

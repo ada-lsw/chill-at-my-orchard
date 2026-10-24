@@ -1,0 +1,6 @@
+{"stations": [
+ {"StationID": "CIMIS-6", "Name": "Davis", "County": "Yolo", "ConnectDate": "7/17/1982", "IsActive": "True",
+  "HmsLatitude": "38º32'7N / 38.535694", "HmsLongitude": "-121º46'35W / -121.776360"},
+ {"StationID": "CIMIS-12", "Name": "Durham", "County": "Butte", "ConnectDate": "1/1/1983", "IsActive": "False",
+  "HmsLatitude": "39º36'32N / 39.608833", "HmsLongitude": "-121º49'26W / -121.823990"}
+]}

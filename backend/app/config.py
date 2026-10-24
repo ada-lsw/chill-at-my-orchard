@@ -89,6 +89,9 @@ CROP_ORDER = ["walnut", "pistachio", "almond", "prune"]
 # Verdict band: where chill so far sits among past seasons on the same date (percentiles).
 VERDICT_LOW_PCT = 20     # below this: "low"
 VERDICT_HIGH_PCT = 80    # above this: "high"; between: "normal"
+# The compare chart's "normal" band (/estimate history band_low / band_high) is drawn only on days
+# with at least this many past winters; fewer is too few to call a range normal (Ada's decision, Oct 24).
+BAND_MIN_SEASONS = 3
 
 # Past winters the app compares against (/estimate history, /decision scenarios): the verdict
 # band above and the status shares below are over these. scripts/warm_cache.py caches exactly

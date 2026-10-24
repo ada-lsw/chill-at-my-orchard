@@ -77,7 +77,10 @@ class EstimateResponse(Open):
     target: Target
     chill: ChillSoFar
     gdd: dict
-    history: dict = Field(description="seasons: [{season, at_date, next_14_days, curve}], percentiles")
+    history: dict = Field(description="seasons: [{season, at_date, next_14_days, curve}], percentiles, "
+                                      "band_low / band_high: per day since the chill start (like curve), "
+                                      "the past-winter range the verdict calls normal; null on days with "
+                                      "fewer than config.BAND_MIN_SEASONS winters")
     projection: dict
     neighbors: list[Neighbor]
     excluded: list[str]

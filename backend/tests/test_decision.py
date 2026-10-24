@@ -1,7 +1,7 @@
 """Rules behind the verdict band and decision card (no data fetching)."""
 from datetime import date
 
-from app import decision
+from app import config, decision
 
 
 def test_verdict_bands():
@@ -86,3 +86,54 @@ def test_summary_keeps_its_wording_away_from_the_target():
         "Your Kerman pistachio trees have 45 of the 57 chill portions they need (79%).")
     assert decision.summary_line("Chandler walnut", 60, 50, "normal", "2016-17").startswith(
         "Your Chandler walnut trees have reached their target: 60 chill portions, above the 50 they need.")
+
+
+# ---------------------------------------------------------------- compare chart band
+# Five hand-made past winters (cumulative chill portions per day since Sept 1).
+# Day 0: 1..5. Day 1: a tie (two winters at 2). Day 2: two winters missing (None, NaN), three left.
+# Day 3: only two winters have data (the others are shorter).
+WINTERS = [[1, 2, 4, 7],
+           [2, 2, 2],
+           [3, 5, 6, 8],
+           [4, 7, None],
+           [5, 9, float("nan")]]
+DAY_VALUES = [[1, 2, 3, 4, 5], [2, 2, 5, 7, 9], [2, 4, 6]]
+
+
+def test_band_edges_on_full_tie_and_gap_days():
+    band = decision.history_band(WINTERS)
+    assert band["band_low"] == [1, 2, 2, None]
+    assert band["band_high"] == [5, 9, 6, None]
+
+
+def test_band_needs_band_min_seasons_winters():
+    band = decision.history_band(WINTERS)
+    assert config.BAND_MIN_SEASONS == 3
+    assert band["band_low"][3] is None and band["band_high"][3] is None   # day 3 has only 2 winters
+
+
+def test_band_matches_the_cards_word():
+    """Below band_low the card says low, between the edges normal, above band_high high."""
+    band = decision.history_band(WINTERS)
+    for day, vals in enumerate(DAY_VALUES):
+        low, high = band["band_low"][day], band["band_high"][day]
+        word = lambda cp: decision.verdict(cp, vals)["band"]  # noqa: E731
+        assert word(low - 0.01) == "low", day
+        assert word(low + 0.01) == "normal", day
+        assert word(high - 0.01) == "normal", day
+        assert word(high + 0.01) == "high", day
+        if len(set(vals)) == len(vals):      # no ties: exactly on an edge still reads low / high
+            assert word(low) == "low" and word(high) == "high", day
+
+
+def test_band_edge_with_a_tie_follows_half_credit():
+    """Two winters at 2 of five: each counts half, so 2 sits at the 20th percentile, which reads normal."""
+    tie_day = DAY_VALUES[1]
+    assert decision.percentile_rank(2, tie_day) == 20
+    assert decision.verdict(2, tie_day)["band"] == "normal"
+    assert decision.percentile_rank(9, tie_day) == 90
+    assert decision.verdict(9, tie_day)["band"] == "high"
+
+
+def test_band_with_no_past_winters_is_empty():
+    assert decision.history_band([]) == {"band_low": [], "band_high": []}

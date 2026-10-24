@@ -2,6 +2,7 @@
 
 Pure functions (no data fetching) so each rule is easy to test and explain:
   verdict()         how this season compares with past seasons on the same date
+  history_band()    the compare chart's "normal" band, day by day, drawn with verdict()'s own rule
   closest_season()  which past season's curve looks most like this one ("tracking like 2020")
   decision()        will chill reach the variety's target, and when does the decision window open
   summary_line()    the one sentence the glance card shows; built here so wording matches numbers
@@ -46,6 +47,38 @@ def verdict(value: float, past: list[float]) -> dict:
     else:
         band, color = "normal", "green"
     return {"band": band, "color": color, "percentile": rank, "seasons_compared": len(past)}
+
+
+def _band_edges(values: list[float]) -> tuple[float, float]:
+    """(band_low, band_high) for one day's past-winter values: where verdict()'s word changes.
+
+    band_low is the lowest value with at least VERDICT_LOW_PCT% of winters at or below it;
+    band_high is the highest value with at most VERDICT_HIGH_PCT% of winters below it.
+    Both always exist: the top value has 100% at or below it, the bottom value 0% below it.
+    """
+    vals, n = sorted(values), len(values)
+    low = next(v for v in vals if 100 * sum(x <= v for x in vals) / n >= config.VERDICT_LOW_PCT)
+    high = next(v for v in reversed(vals) if 100 * sum(x < v for x in vals) / n <= config.VERDICT_HIGH_PCT)
+    return low, high
+
+
+def history_band(curves: list[list[float | None]]) -> dict:
+    """The compare chart's "normal" band: one low and one high value per day since the season start.
+
+    `curves` are past winters' cumulative chill portions per day (index 0 = Sept 1). The edges sit
+    where the glance card's word changes, so the chart and the card always agree: chill below
+    band_low reads "low", above band_high "high", in between "normal". Chill exactly on an edge
+    can read either way, because verdict() gives tied winters half credit.
+    A day with fewer than config.BAND_MIN_SEASONS winters (missing or NaN values are skipped) gets
+    None, so index d still means "d days after Sept 1", like the curves.
+    """
+    low, high = [], []
+    for day in range(max((len(c) for c in curves), default=0)):
+        values = [c[day] for c in curves if day < len(c) and c[day] is not None and np.isfinite(c[day])]
+        edges = _band_edges(values) if len(values) >= config.BAND_MIN_SEASONS else (None, None)
+        low.append(edges[0])
+        high.append(edges[1])
+    return {"band_low": low, "band_high": high}
 
 
 def closest_season(curve: list[float], past: list[dict]) -> str | None:

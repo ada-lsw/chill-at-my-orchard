@@ -54,5 +54,14 @@ def pick() -> dict | None:
 
     if not pin:
         return None
-    exclude = [pin["holdout_station"]] if pin.get("holdout_station") else []
-    return {**pin, "variety": variety, "as_of": str(as_of), "exclude": exclude}
+    return {**pin, "variety": variety, "as_of": str(as_of), "exclude": hidden_stations(pin)}
+
+
+def hidden_stations(pin: dict) -> list[str]:
+    """Stations the estimate must leave out: a demo's hold-out station, unless the demo sets hide_in_demo False.
+
+    A shared link carries the hold-out (?holdout=) but no setting, so it stays hidden, as before.
+    """
+    if pin.get("holdout_station") and pin.get("hide_in_demo", True):
+        return [pin["holdout_station"]]
+    return []

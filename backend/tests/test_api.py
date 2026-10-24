@@ -3,9 +3,10 @@ import os
 
 os.environ["DATA_SOURCE"] = "synthetic"
 
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app import config  # noqa: E402
+from app import config, decision  # noqa: E402
 from app.main import app  # noqa: E402
 
 client = TestClient(app)
@@ -100,3 +101,17 @@ def test_estimate_band_lines_up_with_the_curves_and_the_card():
         assert b["verdict"]["band"] == "high"
     elif low < cp < high:
         assert b["verdict"]["band"] == "normal"
+
+
+@pytest.mark.parametrize("as_of", ["2025-10-15", "2026-02-01"])
+def test_band_today_uses_the_cards_own_numbers(as_of):
+    """The card ranks 1-decimal numbers (at_date), so today's band edges must be the edges of those same numbers.
+
+    With 2-decimal curves, October could read HIGH on the card (now 1.0, past winters 1.0) while today sat
+    inside a band ending at 1.01.
+    """
+    b = client.get("/estimate", params={"lat": 39.61, "lon": -121.82, "as_of": as_of,
+                                       "exclude": ["12"], "history_seasons": 5}).json()
+    h, today = b["history"], len(b["chill"]["curve"]) - 1
+    expected = decision.history_band([[s["at_date"]["chill_portions"]] for s in h["seasons"]])
+    assert (h["band_low"][today], h["band_high"][today]) == (expected["band_low"][0], expected["band_high"][0])

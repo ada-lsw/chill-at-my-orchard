@@ -12,6 +12,7 @@ Response shapes live in schemas.py (the contract with the frontend).
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -27,13 +28,39 @@ METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
 
 # ---------------------------------------------------------------- helpers
 
+def hide_key(text: str) -> str:
+    """The text with the CIMIS key replaced by "***", in case an error message repeats it.
+
+    Used for every error text we log or print (here and in scripts/warm_cache.py).
+    """
+    key = config.CIMIS_APP_KEY
+    return text.replace(key, "***") if key else text
+
+
+def _warn_skipped(station_id: str, year: int, error: Exception) -> None:
+    """Log that a station was left out of a season because its data couldn't load.
+
+    The key is hidden (hide_key). No traceback is logged, because it would repeat the message
+    without the key hidden.
+    """
+    logging.getLogger(__name__).warning(
+        "Station %s, season %s: skipped, data could not load (%s: %s)",
+        station_id, f"{year}-{str(year + 1)[-2:]}", type(error).__name__, hide_key(str(error)))
+
+
 def load_hourly(station_ids, start: date, end: date) -> dict[str, pd.Series]:
+    """Hourly °F series from start to end for each station that loads.
+
+    A station that fails to load (offline and not cached, CIMIS down) is logged and left out,
+    so the estimate uses the others.
+    """
     out = {}
     for sid in station_ids:
         try:
             df = data.get_hourly(sid, start, end)
-        except Exception:
-            continue  # station offline for this window: the estimate just uses the others
+        except Exception as e:  # noqa: BLE001
+            _warn_skipped(sid, data.season_year(start), e)
+            continue
         if not df.empty:
             out[sid] = df.set_index("datetime")["temp_F"]
     return out
@@ -59,9 +86,34 @@ def estimate_at(lat, lon, elev, start, end, exclude) -> tuple[pd.Series, pd.Data
     or after it closed, uses the next closest station instead.
     """
     cands = interp.candidates(data.get_stations(), lat, lon, elev, exclude=exclude)
-    hourly = load_hourly(cands["station_id"], start, end)
-    neigh = interp.pick_neighbors(hourly, cands, start, end)
+    neigh = interp.pick_neighbors(cands, season_coverage_fn(data.season_year(start)))
+    hourly = load_hourly(neigh["station_id"], start, end)
     return interp.estimate_series(hourly, neigh, elev), neigh
+
+
+def season_coverage_fn(year: int):
+    """How much of `year`'s season a station has, for interp.pick_neighbors.
+
+    Two guards keep the app from flooding CIMIS:
+    - A closed station that isn't cached counts as having no data, without downloading.
+      Most closed stations near our pins have no data since 2016, and warm_cache.py has
+      already cached the ones the demo orchards need.
+    - A station whose data can't be loaded (offline and not cached) counts as having none,
+      so the app keeps working with Wi-Fi off. A warning is logged, so online and offline
+      numbers never differ without a trace.
+    """
+    active = data.get_stations().set_index("station_id")["active"]
+
+    def coverage(station_id: str) -> float:
+        """Share of the season's hours with a temperature; 0.0 if closed and uncached, or unloadable."""
+        if not bool(active.get(station_id, False)) and not data.is_cached(station_id, year):
+            return 0.0
+        try:
+            return data.season_coverage(station_id, year)
+        except Exception as e:  # noqa: BLE001
+            _warn_skipped(station_id, year, e)
+            return 0.0
+    return coverage
 
 
 def pin_elevation(lat, lon) -> tuple[float, str]:
@@ -135,7 +187,7 @@ def estimate(
     crop: str | None = Query(None, description="walnut, pistachio, almond or prune"),
     variety: str | None = Query(None, description="e.g. 'Chandler walnut'; see /varieties"),
     exclude: list[str] = Query(default=[]),
-    history_seasons: int = 10,
+    history_seasons: int = config.HISTORY_SEASONS,
     range_low_f: float = config.CUSTOM_RANGE_F[0],
     range_high_f: float = config.CUSTOM_RANGE_F[1],
 ):
@@ -241,10 +293,10 @@ def validate(station_id: str, as_of: date = Query(default=date(2025, 2, 28))):
     target = stations_df.set_index("station_id").loc[station_id]
     # Same neighbor rules as the app: closest stations from the shared pool with data this winter.
     cands = interp.candidates(stations_df, target.lat, target.lon, target.elev_m, exclude=[station_id])
-    hourly = load_hourly(list(cands["station_id"]) + [station_id], c_start, c_end)
+    neigh = interp.pick_neighbors(cands, season_coverage_fn(data.season_year(c_start)))
+    hourly = load_hourly(list(neigh["station_id"]) + [station_id], c_start, c_end)
     if station_id not in hourly:
         raise HTTPException(404, f"No data for station {station_id} in {c_start}..{c_end}")
-    neigh = interp.pick_neighbors(hourly, cands, c_start, c_end)
     summarize = lambda s: chill.summarize(s)  # noqa: E731
     with_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, neighbors=neigh)
     no_elev = interp.leave_one_out(stations_df, hourly, station_id, summarize, lapse_f_per_m=0.0,
@@ -267,7 +319,7 @@ def decision_endpoint(
     variety: str | None = Query(None, description="e.g. 'Kerman pistachio'; see /varieties"),
     crop: str | None = None,
     exclude: list[str] = Query(default=[]),
-    history_seasons: int = 10,
+    history_seasons: int = config.HISTORY_SEASONS,
 ):
     """Is chill likely to reach the variety's target by the target date, and when is the decision window?
 

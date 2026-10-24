@@ -46,15 +46,18 @@ IDW_POWER = float(os.getenv("IDW_POWER", 2.0))
 # Winter valley inversions can make this wrong; validation decides the value we ship.
 LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0117))
 
-# Which stations may be neighbors (interp.candidates). The app and scripts/warm_cache.py use
-# the same pool, so the demo only uses stations that were cached. Closed stations are included:
-# their old data helps estimate past winters.
-NEIGHBOR_CANDIDATES = int(os.getenv("NEIGHBOR_CANDIDATES", 10))  # closest stations considered
+# Which stations may be neighbors (interp.candidates). For each season, the app walks this list
+# closest first and keeps the first NEIGHBORS stations that have data that season;
+# scripts/warm_cache.py does the same walk, so the demo uses exactly the stations it cached.
+# Closed stations are included: their old data helps estimate past winters. Many stations near
+# the demo orchards are listed as closed (8 of the 10 nearest to the Kern pin at Shafter, 7 of
+# them with no data since 2016), so the list is long.
+NEIGHBOR_CANDIDATES = int(os.getenv("NEIGHBOR_CANDIDATES", 30))  # most stations walked
 # STARTING VALUES, not from a source. scripts/validation_table.py should try others; ship the best.
 MAX_NEIGHBOR_KM = float(os.getenv("MAX_NEIGHBOR_KM", 100))
 MAX_ELEV_DIFF_M = float(os.getenv("MAX_ELEV_DIFF_M", 300))   # about 1,000 ft above or below the pin
-# A candidate counts for a window only if it has a temperature for at least this share of the
-# window's hours; otherwise the next closest station takes its place. Also a starting value.
+# A station counts for a season only if it has a temperature for at least this share of the
+# season's hours; otherwise the next closest station takes its place. Also a starting value.
 MIN_NEIGHBOR_COVERAGE = float(os.getenv("MIN_NEIGHBOR_COVERAGE", 0.5))
 
 # Gaps up to this many hours are filled by linear interpolation; longer gaps stay missing.
@@ -80,6 +83,11 @@ CROP_ORDER = ["walnut", "pistachio", "almond", "prune"]
 # Verdict band: where chill so far sits among past seasons on the same date (percentiles).
 VERDICT_LOW_PCT = 20     # below this: "low"
 VERDICT_HIGH_PCT = 80    # above this: "high"; between: "normal"
+
+# Past winters the app compares against (/estimate history, /decision scenarios): the verdict
+# band above and the status shares below are over these. scripts/warm_cache.py caches exactly
+# these winters for the demo orchards, so the demo shows the same history with Wi-Fi off as online.
+HISTORY_SEASONS = 10
 
 # Decision support. Status counts how many past seasons, added to chill so far, reach the
 # variety's target by TARGET_DATE. Draft rules from the team plan; confirm with Julia.
@@ -123,7 +131,10 @@ DEMO_ORCHARDS = {
     },
     "kern": {
         "label": "Kern pistachios (far from a station)",
-        "lat": 35.62, "lon": -119.69, "variety": "Kerman pistachio",  # Lost Hills area, placeholder pin
+        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list) while
+        # Shafter is hidden: the hold-out proof (/validate for station 5) then measures the
+        # estimate's error at exactly the spot this demo shows.
+        "lat": 35.532556, "lon": -119.28179, "variety": "Kerman pistachio",
         "holdout_station": "5",   # hide Shafter to prove the estimate where stations are sparse
         "as_of": "2026-02-01",
     },

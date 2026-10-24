@@ -48,7 +48,10 @@ def _how_to_read_caption(last_season: str, variety: str):
 
 def show(place: dict, est: dict):
     """Draw the long view: bars per season, the variety's target, the backend's trend line, its sentence and a crop note."""
-    h = get("/history", lat=place["lat"], lon=place["lon"], as_of=place["as_of"], max_seasons=15)
+    # exclude: hide the same station the rest of the page hides (Durham's removed station, Kern's test station),
+    # so the long view and the glance card describe the same estimate.
+    h = get("/history", lat=place["lat"], lon=place["lon"], as_of=place["as_of"], max_seasons=15,
+            exclude=place.get("exclude") or None)
     if not h["seasons"]:
         st.info(h["trend_sentence"])   # the backend's "No past winters with saved data here yet."
         return

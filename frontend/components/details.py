@@ -42,7 +42,10 @@ def _measures(est: dict):
     ch, g = est["chill"], est["gdd"]
     st.caption(f"Counting since {_day(ch['start'])}", help=help_for("chill_start"))
     lo, hi = g["thresholds_c"]
-    warmth = f"{g['total_c_days']:.0f} °C-days" if g["started"] else "Not yet"
+    # Before Jan 1 the backend's bloom date is last spring's (e.g. Feb 20, 2025 for a Nov 2025 date), so its
+    # total is last summer's warmth. Show "Not yet" until this winter's bloom date. Question for Ada (seasons.gdd_window).
+    this_winter = g["start"] >= ch["start"]   # ISO dates compare correctly as text
+    warmth = f"{g['total_c_days']:.0f} °C-days" if g["started"] and this_winter else "Not yet"
     _metric_rows([
         ("Chill portions", f"{ch['chill_portions']:.1f}", help_for("chill_portions")),
         ("Chill hours (32-45°F)", f"{ch['chill_hours']:.0f}", help_for("chill_hours")),

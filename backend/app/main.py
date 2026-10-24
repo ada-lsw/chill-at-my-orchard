@@ -181,7 +181,7 @@ def estimate(
     crop: str | None = Query(None, description="walnut, pistachio, almond or prune"),
     variety: str | None = Query(None, description="e.g. 'Chandler walnut'; see /varieties"),
     exclude: list[str] = Query(default=[]),
-    history_seasons: int = 10,
+    history_seasons: int = config.HISTORY_SEASONS,
     range_low_f: float = config.CUSTOM_RANGE_F[0],
     range_high_f: float = config.CUSTOM_RANGE_F[1],
 ):
@@ -313,7 +313,7 @@ def decision_endpoint(
     variety: str | None = Query(None, description="e.g. 'Kerman pistachio'; see /varieties"),
     crop: str | None = None,
     exclude: list[str] = Query(default=[]),
-    history_seasons: int = 10,
+    history_seasons: int = config.HISTORY_SEASONS,
 ):
     """Is chill likely to reach the variety's target by the target date, and when is the decision window?
 

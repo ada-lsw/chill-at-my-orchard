@@ -56,3 +56,33 @@ def test_lines_never_name_a_product_rate_or_apply_date():
     assert "pca" in line
     for banned in ("apply", "spray on", "rate", "gallon", "cyanamide"):
         assert banned not in line
+
+
+def test_progress_never_shows_100_before_the_target():
+    assert decision.progress_pct(56.8, 57) == 99         # 99.6 would round to 100
+    assert decision.progress_pct(57.2, 57) == 100
+    assert decision.progress_pct(45, 57) == 79
+    assert decision.progress_pct(10, 0) is None
+
+
+def test_summary_never_says_57_above_the_57():
+    """Just past the target: the rounded numbers are equal, so say "about" instead of "above"."""
+    s = decision.summary_line("Kerman pistachio", 57.2, 57, "normal", "2020-21")
+    assert "above the 57" not in s
+    assert s.startswith("Your Kerman pistachio trees have reached their target: about the 57 chill portions they need.")
+
+
+def test_summary_never_says_57_of_the_57_before_the_target():
+    """Just short of the target: say "almost all" and a percent under 100."""
+    for so_far in (56.6, 56.8):
+        s = decision.summary_line("Kerman pistachio", so_far, 57, "normal", None)
+        assert "57 of the 57" not in s and "(100%)" not in s
+        assert "almost all of the 57 chill portions they need (99%)" in s
+
+
+def test_summary_keeps_its_wording_away_from_the_target():
+    """Guard test: the usual sentences are unchanged."""
+    assert decision.summary_line("Kerman pistachio", 45, 57, "low", None).startswith(
+        "Your Kerman pistachio trees have 45 of the 57 chill portions they need (79%).")
+    assert decision.summary_line("Chandler walnut", 60, 50, "normal", "2016-17").startswith(
+        "Your Chandler walnut trees have reached their target: 60 chill portions, above the 50 they need.")

@@ -39,12 +39,17 @@ GDD_START = (2, 20)
 GDD_THRESHOLDS_C = {"almond": (5.0, 35.0), "walnut": (5.0, 35.0),
                     "pistachio": (5.0, 35.0), "prune": (5.0, 35.0)}  # TODO: confirm non-almond crops
 
-# Interpolation
-NEIGHBORS = int(os.getenv("NEIGHBORS", 5))      # stations used for each estimate
+# Interpolation. NEIGHBORS and LAPSE_F_PER_M: chosen by scripts/validation_table.py over 19 hold-out
+# winters; see pitch/validation.md.
+NEIGHBORS = int(os.getenv("NEIGHBORS", 3))      # stations used for each estimate (5 was tried too)
 IDW_POWER = float(os.getenv("IDW_POWER", 2.0))
-# Temperature change per meter of elevation, °F/m (standard lapse 6.5 °C/km ≈ 0.0117 °F/m).
-# Winter valley inversions can make this wrong; validation decides the value we ship.
-LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0117))
+# Temperature change per meter of elevation, °F/m. 0 = no elevation adjustment. The standard lapse
+# (6.5 °C/km ≈ 0.0117 °F/m) was tried; Ada's rule picked "off" (typical miss 3.52 vs 3.63 at 3 neighbors,
+# a small margin; winter valley inversions can make a fixed lapse wrong).
+LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0))
+# Made-up weather (DATA_SOURCE=synthetic) keeps the standard lapse so mountains stay colder and the
+# synthetic demo cards don't change when the model setting above changes.
+SYNTHETIC_LAPSE_F_PER_M = 0.0117
 
 # Which stations may be neighbors (interp.candidates). For each season, the app walks this list
 # closest first and keeps the first NEIGHBORS stations that have data that season;
@@ -53,7 +58,8 @@ LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0117))
 # the demo orchards are listed as closed (8 of the 10 nearest to the Kern pin at Shafter, 7 of
 # them with no data since 2016), so the list is long.
 NEIGHBOR_CANDIDATES = int(os.getenv("NEIGHBOR_CANDIDATES", 30))  # most stations walked
-# STARTING VALUES, not from a source. scripts/validation_table.py should try others; ship the best.
+# Starting values, not from a source. scripts/validation_table.py tried the caps on and off and kept
+# them on (pitch/validation.md).
 MAX_NEIGHBOR_KM = float(os.getenv("MAX_NEIGHBOR_KM", 100))
 MAX_ELEV_DIFF_M = float(os.getenv("MAX_ELEV_DIFF_M", 300))   # about 1,000 ft above or below the pin
 # A station counts for a season only if it has a temperature for at least this share of the
@@ -88,6 +94,12 @@ VERDICT_HIGH_PCT = 80    # above this: "high"; between: "normal"
 # band above and the status shares below are over these. scripts/warm_cache.py caches exactly
 # these winters for the demo orchards, so the demo shows the same history with Wi-Fi off as online.
 HISTORY_SEASONS = 10
+
+# Long view (/history) trend. A trend needs at least MIN_TREND_SEASONS winters (the rule /history
+# already used). It is called falling or rising only when the TREND_CONFIDENCE range of the slope
+# stays on one side of zero: 95% is the usual statistics convention, approved by Ada.
+MIN_TREND_SEASONS = 5
+TREND_CONFIDENCE = 0.95
 
 # Decision support. Status counts how many past seasons, added to chill so far, reach the
 # variety's target by TARGET_DATE. Draft rules from the team plan; confirm with Julia.
@@ -127,15 +139,17 @@ DEMO_ORCHARDS = {
         "label": "Durham walnuts, Butte County (station removed)",
         "lat": 39.61, "lon": -121.82, "variety": "Chandler walnut",
         "holdout_station": "12",  # Durham CIMIS station, stopped reporting July 2025
+        "hide_in_demo": True,     # the story is the removed station, so the demo estimates without it
         "as_of": "2026-02-01",    # replay the first winter with no Durham station
     },
     "kern": {
         "label": "Kern pistachios (far from a station)",
-        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list) while
-        # Shafter is hidden: the hold-out proof (/validate for station 5) then measures the
-        # estimate's error at exactly the spot this demo shows.
+        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list). The
+        # hold-out proof (/validate for station 5) hides Shafter and measures the estimate's error
+        # at exactly this spot; the demo itself shows Shafter's real data (Ada's decision, Oct 24).
         "lat": 35.532556, "lon": -119.28179, "variety": "Kerman pistachio",
-        "holdout_station": "5",   # hide Shafter to prove the estimate where stations are sparse
+        "holdout_station": "5",   # hidden only in the accuracy proof (/validate, warm_cache.py)
+        "hide_in_demo": False,    # the demo button keeps Shafter: the grower sees its own reading
         "as_of": "2026-02-01",
     },
 }

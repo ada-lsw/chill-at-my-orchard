@@ -246,7 +246,7 @@ def synthetic_temp(lat, lon, elev_m, index: pd.DatetimeIndex, seed: int = 0) -> 
     days = (index - pd.Timestamp("2000-01-01")).days.to_numpy()  # same weather at every station
     shared = 5 * np.sin(days / 4.3) + 3 * np.sin(days / 9.7)      # regional weather systems
     local = np.random.default_rng(seed).normal(0, 1.2, len(index))
-    return seasonal + daily + shared + local - 1.2 * (lat - 38.5) - config.LAPSE_F_PER_M * elev_m
+    return seasonal + daily + shared + local - 1.2 * (lat - 38.5) - config.SYNTHETIC_LAPSE_F_PER_M * elev_m
 
 
 def _synthetic_hourly(station_id: str, start: date, end: date) -> pd.DataFrame:

@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
+from scipy import stats
 
 from . import chill, config, data, decision, forecast, interp, seasons
 from .schemas import DecisionResponse, EstimateResponse, HistoryResponse
@@ -78,17 +79,27 @@ def daily_curve(s: pd.Series) -> list[float]:
     return [round(float(v), 2) for v in cp.resample("D").last().ffill()]
 
 
-def estimate_at(lat, lon, elev, start, end, exclude) -> tuple[pd.Series, pd.DataFrame]:
+def estimate_at(lat, lon, elev, start, end, exclude, saved_only: bool = False) -> tuple[pd.Series, pd.DataFrame]:
     """Hourly estimate at a point for one window, and the neighbor stations actually used.
 
     Neighbors are chosen per window: the closest stations from the shared pool
     (interp.candidates) that have data for this window. So a winter before a station opened,
     or after it closed, uses the next closest station instead.
+    saved_only: use only station data already on this machine, never download (saved_coverage_fn).
     """
     cands = interp.candidates(data.get_stations(), lat, lon, elev, exclude=exclude)
-    neigh = interp.pick_neighbors(cands, season_coverage_fn(data.season_year(start)))
+    coverage_fn = saved_coverage_fn if saved_only else season_coverage_fn
+    neigh = interp.pick_neighbors(cands, coverage_fn(data.season_year(start)))
     hourly = load_hourly(neigh["station_id"], start, end)
     return interp.estimate_series(hourly, neigh, elev), neigh
+
+
+def _saved_locally(station_id: str, year: int) -> bool:
+    """True if this station-season can be read without asking CIMIS.
+
+    Synthetic data is made on this machine; real data counts only if it is already in data/cache/.
+    """
+    return config.DATA_SOURCE == "synthetic" or data.is_cached(station_id, year)
 
 
 def season_coverage_fn(year: int):
@@ -114,6 +125,15 @@ def season_coverage_fn(year: int):
             _warn_skipped(station_id, year, e)
             return 0.0
     return coverage
+
+
+def saved_coverage_fn(year: int):
+    """Like season_coverage_fn, but a station-season not saved on this machine counts as no data.
+
+    Used by the long view (/history), so asking for many winters never downloads anything.
+    """
+    coverage = season_coverage_fn(year)
+    return lambda station_id: coverage(station_id) if _saved_locally(station_id, year) else 0.0
 
 
 def pin_elevation(lat, lon) -> tuple[float, str]:
@@ -340,30 +360,77 @@ def decision_endpoint(
             "line": decision.decision_line(d), **d}
 
 
+def _season_total(lat, lon, elev, start: date, end: date, exclude) -> tuple[dict | None, str | None]:
+    """One past winter's chill at the pin from saved station data only: (row, None) or (None, why not).
+
+    A winter still in progress is skipped: its saved file is refreshed daily, which downloads.
+    """
+    if data.season_year(start) >= data.season_year(date.today()):
+        return None, "this winter is not finished yet"
+    est, _ = estimate_at(lat, lon, elev, start, end, exclude, saved_only=True)
+    est = clip(est, start, end)
+    if est.dropna().empty:
+        return None, "no saved station data near here for this winter"
+    totals = chill.summarize(est)
+    return {"chill_portions": round(totals["chill_portions"], 1), "hours_missing": totals["hours_missing"]}, None
+
+
+def trend_fit(rows: list[dict]) -> dict:
+    """Straight-line trend of season totals (oldest first) against the season's start year.
+
+    direction is "falling" or "rising" only when the config.TREND_CONFIDENCE (95%) range of the
+    slope stays on one side of zero (t distribution, n - 2 degrees of freedom); otherwise
+    "no clear change". per_decade is the slope times 10. line holds the fitted values at the
+    first and last season. Fewer than config.MIN_TREND_SEASONS winters: "too few winters".
+    """
+    if len(rows) < config.MIN_TREND_SEASONS:
+        return {"direction": "too few winters", "per_decade": None, "line": None}
+    years = np.array([int(r["season"][:4]) for r in rows], dtype=float)
+    fit = stats.linregress(years, [r["chill_portions"] for r in rows])
+    margin = stats.t.ppf((1 + config.TREND_CONFIDENCE) / 2, len(rows) - 2) * fit.stderr
+    if fit.slope + margin < 0:
+        direction = "falling"
+    elif fit.slope - margin > 0:
+        direction = "rising"
+    else:
+        direction = "no clear change"
+
+    def on_line(i: int) -> dict:
+        """The fitted line's value at row i."""
+        return {"season": rows[i]["season"], "chill_portions": round(float(fit.intercept + fit.slope * years[i]), 1)}
+    return {"direction": direction, "per_decade": round(float(fit.slope * 10), 1),
+            "line": {"start": on_line(0), "end": on_line(-1)}}
+
+
 @app.get("/history", response_model=HistoryResponse)
 def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory=date.today),
                      max_seasons: int = 15, exclude: list[str] = Query(default=[])):
     """Season-end chill portions at the pin for past seasons, with a trend (Julia's long-horizon ask).
 
-    v1 rebuilds each season from hourly station data, which is slow for decades of CIMIS data.
-    Work package B2 replaces this with FNRIC's daily chill history per station (one request each).
+    Reads only station data already saved on this machine and never downloads, so asking for
+    many winters is safe. Winters it can't count are listed in seasons_skipped with the reason.
+    v1 rebuilds each season from hourly station data; work package B3 adds FNRIC's daily chill
+    history per station to reach back further.
     """
     elev, elev_source = pin_elevation(lat, lon)
     c_start = seasons.chill_season_start(as_of)
-    rows = []
+    rows, skipped = [], []
     for k in range(1, max_seasons + 1):
         s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
-        est, _ = estimate_at(lat, lon, elev, s0, e0, exclude)
-        est = clip(est, s0, e0)
-        if est.dropna().empty:
-            continue
-        rows.append({"season": f"{s0.year}-{str(s0.year + 1)[-2:]}",
-                     "chill_portions": round(float(chill.chill_portions(est)[-1]), 1)})
+        label = f"{s0.year}-{str(s0.year + 1)[-2:]}"
+        row, reason = _season_total(lat, lon, elev, s0, e0, exclude)
+        if row:
+            rows.append({"season": label, **row})
+        else:
+            skipped.append({"season": label, "reason": reason})
     rows.sort(key=lambda r: r["season"])
-    trend = None
-    if len(rows) >= 5:
-        x = np.array([int(r["season"][:4]) for r in rows]); y = np.array([r["chill_portions"] for r in rows])
-        trend = round(float(np.polyfit(x, y, 1)[0] * 10), 1)
+    skipped.sort(key=lambda r: r["season"])
+    trend = trend_fit(rows)
+    typical = float(np.median([r["chill_portions"] for r in rows])) if rows else None
     return {"location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
             "season_end": f"{seasons.CHILL_END[0]:02d}-{seasons.CHILL_END[1]:02d}",
-            "seasons": rows, "trend_cp_per_decade": trend, "source": config.DATA_SOURCE}
+            "seasons": rows, "trend_cp_per_decade": trend["per_decade"], "source": config.DATA_SOURCE,
+            "trend_direction": trend["direction"], "trend_line": trend["line"],
+            "trend_sentence": decision.trend_sentence(trend["direction"], [r["season"] for r in rows],
+                                                      trend["per_decade"], typical),
+            "seasons_used": len(rows), "seasons_skipped": skipped}

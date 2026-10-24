@@ -89,6 +89,12 @@ VERDICT_HIGH_PCT = 80    # above this: "high"; between: "normal"
 # these winters for the demo orchards, so the demo shows the same history with Wi-Fi off as online.
 HISTORY_SEASONS = 10
 
+# Long view (/history) trend. A trend needs at least MIN_TREND_SEASONS winters (the rule /history
+# already used). It is called falling or rising only when the TREND_CONFIDENCE range of the slope
+# stays on one side of zero: 95% is the usual statistics convention, approved by Ada.
+MIN_TREND_SEASONS = 5
+TREND_CONFIDENCE = 0.95
+
 # Decision support. Status counts how many past seasons, added to chill so far, reach the
 # variety's target by TARGET_DATE. Draft rules from the team plan; confirm with Julia.
 TARGET_DATE = (3, 2)          # month, day. West Coast Nut: pistachio target 62-65 CP by about Mar 2

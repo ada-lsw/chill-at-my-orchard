@@ -5,6 +5,7 @@ Pure functions (no data fetching) so each rule is easy to test and explain:
   closest_season()  which past season's curve looks most like this one ("tracking like 2020")
   decision()        will chill reach the variety's target, and when does the decision window open
   summary_line()    the one sentence the glance card shows; built here so wording matches numbers
+  trend_sentence()  the long view's sentence: is chill changing here, said only as surely as we know
 
 Chill portions from the Dynamic Model are not strictly additive (the model carries state), so
 "chill so far + what a past season added from this date on" is an approximation. We say so in
@@ -16,7 +17,7 @@ from datetime import date, timedelta
 
 import numpy as np
 
-from . import config
+from . import config, seasons
 
 
 # ---------------------------------------------------------------- verdict
@@ -185,3 +186,28 @@ def decision_line(d: dict) -> str:
     if s in ("watch", "at_risk"):
         line += " Talk to your PCA."
     return line
+
+
+def trend_sentence(direction: str, season_labels: list[str], per_decade: float | None,
+                   typical_cp: float | None) -> str:
+    """The long view's sentence about the trend in season-end chill (oldest season first).
+
+    Says "fell" or "rose" only for a clear trend (main.trend_fit decides). The rate comes with its
+    meaning: its share of a typical winter here (the median season total). Names no model.
+    """
+    n = len(season_labels)
+    if n == 0:
+        return "No past winters with saved data here yet."
+    first, last = season_labels[0], season_labels[-1]
+    span = first if n == 1 else f"{first} to {last}"
+    counted = (f"Chill is counted from {_fmt_day(date(2001, *config.CHILL_START).isoformat())} "
+               f"to {_fmt_day(date(2001, *seasons.CHILL_END).isoformat())}.")
+    if direction == "too few winters":
+        return f"Only {n} winter{'s' if n > 1 else ''} of data here ({span}), too few to tell whether chill is changing. {counted}"
+    contiguous = int(last[:4]) - int(first[:4]) + 1 == n
+    lead = f"Over the last {n} winters here ({span})" if contiguous else f"Over {n} winters here between {first} and {last}"
+    if direction in ("falling", "rising"):
+        verb = "fell" if direction == "falling" else "rose"
+        share = f", about {round(100 * abs(per_decade) / typical_cp)}% of a typical winter here" if typical_cp else ""
+        return f"{lead}, chill {verb} by about {abs(per_decade):.1f} chill portions per decade{share}. {counted}"
+    return f"{lead}, chill shows no clear rise or fall: {n} winters is too few to tell. {counted}"

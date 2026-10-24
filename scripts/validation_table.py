@@ -170,7 +170,7 @@ def check_real_data() -> None:
 def write_csv(rows: list[dict]) -> None:
     """pitch/validation.csv: one row per setting, station and winter."""
     with OUT_CSV.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w = csv.DictWriter(f, fieldnames=list(rows[0]), lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
 

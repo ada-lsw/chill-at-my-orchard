@@ -29,24 +29,15 @@ METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
 
 # ---------------------------------------------------------------- helpers
 
-def hide_key(text: str) -> str:
-    """The text with the CIMIS key replaced by "***", in case an error message repeats it.
-
-    Used for every error text we log or print (here and in scripts/warm_cache.py).
-    """
-    key = config.CIMIS_APP_KEY
-    return text.replace(key, "***") if key else text
-
-
 def _warn_skipped(station_id: str, year: int, error: Exception) -> None:
     """Log that a station was left out of a season because its data couldn't load.
 
-    The key is hidden (hide_key). No traceback is logged, because it would repeat the message
+    The key is hidden (data.hide_key). No traceback is logged, because it would repeat the message
     without the key hidden.
     """
     logging.getLogger(__name__).warning(
         "Station %s, season %s: skipped, data could not load (%s: %s)",
-        station_id, f"{year}-{str(year + 1)[-2:]}", type(error).__name__, hide_key(str(error)))
+        station_id, seasons.season_label(year), type(error).__name__, data.hide_key(str(error)))
 
 
 def load_hourly(station_ids, start: date, end: date) -> dict[str, pd.Series]:
@@ -136,9 +127,9 @@ def saved_coverage_fn(year: int):
     return lambda station_id: coverage(station_id) if _saved_locally(station_id, year) else 0.0
 
 
-def pin_elevation(lat, lon) -> tuple[float, str]:
-    """Elevation of the pin, falling back to the nearest station when offline."""
-    return interp.pin_elevation(data.get_stations(), lat, lon)
+def pin_elevation(lat, lon, exclude=()) -> tuple[float, str]:
+    """Elevation of the pin, falling back to the nearest station that isn't hidden when offline."""
+    return interp.pin_elevation(data.get_stations(), lat, lon, exclude=exclude)
 
 
 def resolve_variety(variety: str | None, crop: str | None) -> tuple[str, dict]:
@@ -156,7 +147,7 @@ def resolve_variety(variety: str | None, crop: str | None) -> tuple[str, dict]:
 
 def target_block(name: str, v: dict, so_far_cp: float) -> dict:
     return {"variety": name, "crop": v["crop"], "target_cp": v["target_cp"], "range_cp": v["range_cp"],
-            "progress_pct": round(100.0 * so_far_cp / v["target_cp"], 0), "note": v["note"]}
+            "progress_pct": decision.progress_pct(so_far_cp, v["target_cp"]), "note": v["note"]}
 
 
 def past_scenarios(lat, lon, elev, exclude, as_of: date, until: date, n: int) -> list[dict]:
@@ -178,7 +169,7 @@ def past_scenarios(lat, lon, elev, exclude, as_of: date, until: date, n: int) ->
         before = cum[cum.index <= pd.Timestamp(a0)]
         base = float(before.iloc[-1]) if not before.empty else 0.0  # chill on the shifted as_of date
         after = cum[cum.index >= pd.Timestamp(a0)]
-        out.append({"season": f"{s0.year}-{str(s0.year + 1)[-2:]}",
+        out.append({"season": seasons.season_label(s0.year),
                     "added_by_day": [round(float(v) - base, 2) for v in after]})
     return out
 
@@ -213,7 +204,7 @@ def estimate(
 ):
     vname, vrec = resolve_variety(variety, crop)
     crop = vrec["crop"]
-    elev, elev_source = pin_elevation(lat, lon)
+    elev, elev_source = pin_elevation(lat, lon, exclude)
 
     # 1. So far
     c_start, c_end, complete = seasons.chill_window(as_of)
@@ -240,7 +231,7 @@ def estimate(
         at_date = chill.summarize(clip(h_est, h_start, h_end), crop)
         plus14 = chill.summarize(clip(h_est, h_start, seasons.plus_days(h_end, 14)), crop)
         history.append({
-            "season": f"{h_start.year}-{str(h_start.year + 1)[-2:]}",
+            "season": seasons.season_label(h_start.year),
             "at_date": {m: round(at_date[m], 1) for m in METRICS},
             "next_14_days": {m: round(plus14[m] - at_date[m], 1) for m in METRICS},
             "curve": daily_curve(clip(h_est, h_start, seasons.plus_days(h_end, 14))),
@@ -346,7 +337,7 @@ def decision_endpoint(
     Informs the decision only. Options are types to raise with a licensed PCA, never rates or timing.
     """
     vname, vrec = resolve_variety(variety, crop)
-    elev, _ = pin_elevation(lat, lon)
+    elev, _ = pin_elevation(lat, lon, exclude)
     c_start, c_end, _ = seasons.chill_window(as_of)
     est, _ = estimate_at(lat, lon, elev, c_start, as_of, exclude)
     est = clip(est, c_start, as_of)
@@ -412,12 +403,12 @@ def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory
     v1 rebuilds each season from hourly station data; work package B3 adds FNRIC's daily chill
     history per station to reach back further.
     """
-    elev, elev_source = pin_elevation(lat, lon)
+    elev, elev_source = pin_elevation(lat, lon, exclude)
     c_start = seasons.chill_season_start(as_of)
     rows, skipped = [], []
     for k in range(1, max_seasons + 1):
         s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
-        label = f"{s0.year}-{str(s0.year + 1)[-2:]}"
+        label = seasons.season_label(s0.year)
         row, reason = _season_total(lat, lon, elev, s0, e0, exclude)
         if row:
             rows.append({"season": label, **row})

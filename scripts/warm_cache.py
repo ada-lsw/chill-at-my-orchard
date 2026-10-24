@@ -27,12 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 os.environ.setdefault("DATA_SOURCE", "cimis")
 
 from app import config, data, interp  # noqa: E402
-from app.main import hide_key  # noqa: E402
-
-
-def season_label(year: int) -> str:
-    """A season the way the app writes it: 2024 -> "2024-25"."""
-    return f"{year}-{str(year + 1)[-2:]}"
+from app.seasons import season_label  # noqa: E402
 
 
 def seasons_to_cache(as_of: date, today: date) -> list[int]:
@@ -100,7 +95,7 @@ def warm_demo(key: str, demo: dict, stations, coverage) -> int:
             picks = {label: walk(stations, p, hold, coverage, y) for label, p in points.items()}
         except Exception as e:  # noqa: BLE001
             failed += 1
-            print(f"  {season_label(y)}: FAILED ({hide_key(str(e))}); re-run later")
+            print(f"  {season_label(y)}: FAILED ({data.hide_key(str(e))}); re-run later")
             continue
         print(f"  {season_label(y)}  hold-out {hold}: {hold_share:.0%}  {describe(picks)}")
     return failed

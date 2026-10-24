@@ -106,7 +106,7 @@ def test_typical_winter_is_the_median(monkeypatch):
     rows = rows_from([50, 52, 54, 56, 100])
     seen = {}
     monkeypatch.setattr(main, "_season_total", lambda *a: (rows.pop(0) | {"hours_missing": 0}, None))
-    monkeypatch.setattr(main, "pin_elevation", lambda lat, lon: (40.0, "test"))
+    monkeypatch.setattr(main, "pin_elevation", lambda lat, lon, exclude=(): (40.0, "test"))
     monkeypatch.setattr(decision, "trend_sentence",
                         lambda direction, labels, per_decade, typical: seen.setdefault("typical", typical) and "")
     client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 5})
@@ -154,7 +154,7 @@ def saved_cimis_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(data, "_cimis_hourly",
                         lambda sid, start, end: asked.append((sid, start)) or pd.DataFrame(columns=data.CONTRACT))
     monkeypatch.setattr(requests, "get", lambda *a, **k: asked.append(a) or None)
-    monkeypatch.setattr(main, "pin_elevation", lambda lat, lon: (40.0, "test"))
+    monkeypatch.setattr(main, "pin_elevation", lambda lat, lon, exclude=(): (40.0, "test"))
 
     def save(year: int) -> list:
         """Save one winter for SYN-A, B and C (2022-23 with a 10-hour gap at all three); returns the file paths."""

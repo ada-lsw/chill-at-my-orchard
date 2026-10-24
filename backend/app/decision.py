@@ -97,7 +97,7 @@ def decision(so_far_cp: float, as_of: date, crop: str, target_cp: float,
     """
     tdate = target_date_for(as_of)
     out = {"target_cp": target_cp, "target_date": str(tdate), "so_far_cp": round(so_far_cp, 1),
-           "progress_pct": round(100.0 * so_far_cp / target_cp, 0) if target_cp else None,
+           "progress_pct": progress_pct(so_far_cp, target_cp),
            "seasons_compared": len(scenarios)}
 
     if so_far_cp >= target_cp:
@@ -160,18 +160,32 @@ def _fmt_month_day(month_day: tuple[int, int]) -> str:
     return f"{date(2001, month, day):%b} {day}"
 
 
+def progress_pct(so_far_cp: float, target_cp: float) -> int | None:
+    """Share of the target reached, in whole percent; never 100 before the target is actually reached."""
+    if not target_cp:
+        return None
+    pct = round(100 * so_far_cp / target_cp)
+    return min(pct, 99) if so_far_cp < target_cp else pct
+
+
 def summary_line(variety: str, so_far_cp: float, target_cp: float, verdict_band: str,
                  closest: str | None) -> str:
-    """Glance-card sentence: crop and variety first, number paired with its meaning."""
-    pct = round(100 * so_far_cp / target_cp) if target_cp else None
+    """Glance-card sentence: crop and variety first, number paired with its meaning.
+
+    When chill so far and the target print as the same whole number (57.2 and 57), the sentence says
+    "about" or "almost all" instead of "57 ... above the 57" or "57 of the 57".
+    """
     band_words = {"low": "Less chill than usual so far", "normal": "A normal year so far",
                   "high": "More chill than usual so far"}.get(verdict_band, "Not enough history to compare")
     like = f", most like {closest}" if closest else ""
+    so_far, target = f"{so_far_cp:.0f}", f"{target_cp:.0f}"
     if target_cp and so_far_cp >= target_cp:
-        return (f"Your {variety} trees have reached their target: {so_far_cp:.0f} chill portions, "
-                f"above the {target_cp:.0f} they need. {band_words}{like}.")
-    return (f"Your {variety} trees have {so_far_cp:.0f} of the {target_cp:.0f} chill portions they need "
-            f"({pct}%). {band_words}{like}.")
+        amount = (f"about the {target} chill portions they need" if so_far == target
+                  else f"{so_far} chill portions, above the {target} they need")
+        return f"Your {variety} trees have reached their target: {amount}. {band_words}{like}."
+    amount = (f"almost all of the {target} chill portions they need" if so_far == target
+              else f"{so_far} of the {target} chill portions they need")
+    return f"Your {variety} trees have {amount} ({progress_pct(so_far_cp, target_cp)}%). {band_words}{like}."
 
 
 def decision_line(d: dict) -> str:

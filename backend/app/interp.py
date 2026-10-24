@@ -50,12 +50,13 @@ def elevation_m(lat: float, lon: float) -> float | None:
     return elev
 
 
-def pin_elevation(stations: pd.DataFrame, lat: float, lon: float) -> tuple[float, str]:
-    """Elevation of a pin and where it came from. Falls back to the nearest station when offline."""
+def pin_elevation(stations: pd.DataFrame, lat: float, lon: float, exclude=()) -> tuple[float, str]:
+    """Elevation of a pin and where it came from. Falls back to the nearest station when offline,
+    never one in `exclude` (a hidden station must not help estimate itself)."""
     elev = elevation_m(lat, lon)
     if elev is not None:
         return elev, "open-meteo"
-    st = nearest(stations, lat, lon, 1)
+    st = nearest(stations, lat, lon, 1, exclude=exclude)
     return float(st["elev_m"].iloc[0]), "nearest station (offline)"
 
 

@@ -1,4 +1,5 @@
 """Compare tab: this season vs. past seasons, and the next 14 days.  Owner: Frontend B."""
+import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -14,17 +15,62 @@ def show(est: dict):
     if "added" in proj:
         a3.metric("Next 14 days", f"+{proj['added']['chill_portions']:.0f}", help=f"Method: {proj['method']}")
 
+    st.plotly_chart(build_chart(est), use_container_width=True)
+    st.caption("Shaded band: where most past winters fell (the middle 80%). Dotted line: last winter. "
+               "Dashed line: the next 14 days, from the backend's forecast outlook.")
+
+
+def normal_band(seasons: list[dict]) -> tuple[list[float], list[float]]:
+    """Return the 10th and 90th percentile of the past curves for each day.
+
+    A percentile is the value that a given share of past winters stayed under. Days where
+    fewer than 3 past winters have data are left out so the band is never based on one or two years.
+    """
+    longest = max((len(s["curve"]) for s in seasons), default=0)
+    low, high = [], []
+    for day in range(longest):
+        values = [s["curve"][day] for s in seasons if len(s["curve"]) > day]
+        if len(values) < 3:
+            break
+        low.append(float(np.percentile(values, 10)))
+        high.append(float(np.percentile(values, 90)))
+    return low, high
+
+
+def build_chart(est: dict) -> go.Figure:
+    """Build one chart: normal range, last winter, this winter, the target, and the next 14 days."""
+    ch, hist, proj = est["chill"], est["history"], est["projection"]
+    seasons = hist["seasons"]
     fig = go.Figure()
-    closest = est["verdict"].get("closest_season")
-    for s in hist["seasons"]:
-        is_closest = s["season"] == closest
-        fig.add_trace(go.Scatter(y=s["curve"], mode="lines", name=s["season"],
-                                 line=dict(color="#888" if is_closest else "lightgray",
-                                           width=2 if is_closest else 1, dash="dot" if is_closest else None),
-                                 showlegend=is_closest))
-    fig.add_trace(go.Scatter(y=ch["curve"], mode="lines", line=dict(color="#1f6f8b", width=4), name="This season"))
+
+    low, high = normal_band(seasons)
+    if low:
+        days = list(range(len(low)))
+        fig.add_trace(go.Scatter(x=days, y=high, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(x=days, y=low, mode="lines", line=dict(width=0), fill="tonexty",
+                                 fillcolor="rgba(120,120,120,0.25)", name="Normal range (most winters)",
+                                 hoverinfo="skip"))
+
+    if seasons:
+        last = max(seasons, key=lambda s: s["season"])  # season labels like "2024-25" sort by year
+        fig.add_trace(go.Scatter(y=last["curve"], mode="lines", name=f"Last winter ({last['season']})",
+                                 line=dict(color="#444444", width=2, dash="dot")))
+
+    fig.add_trace(go.Scatter(y=ch["curve"], mode="lines", name="This winter",
+                             line=dict(color="#1f6f8b", width=4)))
+
+    # Dashed extension: a straight line from today's total to the backend's 14-day outlook.
+    added = proj.get("added", {}).get("chill_portions")
+    if added is not None and ch["curve"]:
+        x0 = len(ch["curve"]) - 1
+        fig.add_trace(go.Scatter(x=[x0, x0 + proj.get("days", 14)], y=[ch["curve"][-1], ch["curve"][-1] + added],
+                                 mode="lines", name="Next 14 days (outlook)",
+                                 line=dict(color="#1f6f8b", width=4, dash="dash")))
+
     t = est["target"]["target_cp"]
-    fig.add_hline(y=t, line_dash="dash", annotation_text=f"{est['target']['variety']} needs {t:.0f}")
-    fig.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10),
-                      xaxis_title=f"Days since {ch['start']}", yaxis_title="Chill portions")
-    st.plotly_chart(fig, use_container_width=True)
+    fig.add_hline(y=t, line_dash="dash", line_color="#d55e00", line_width=3,
+                  annotation_text=f"{est['target']['variety']} needs {t:.0f}")
+    fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
+                      xaxis_title=f"Days since {ch['start']}", yaxis_title="Chill portions",
+                      legend=dict(orientation="h", y=-0.25), font=dict(size=14))
+    return fig

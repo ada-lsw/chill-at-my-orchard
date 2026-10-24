@@ -27,7 +27,8 @@ def hourly_forecast(lat: float, lon: float, days: int = 14) -> tuple[pd.Series, 
         source = "live"
     except Exception:
         if not cache.exists():
-            return pd.Series(dtype=float), "unavailable"
+            # Empty, but with a time index, so callers can still compare it with times.
+            return pd.Series(dtype=float, index=pd.DatetimeIndex([])), "unavailable"
         payload = json.loads(cache.read_text())
         source = "cached"
     h = payload["hourly"]

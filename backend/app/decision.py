@@ -221,6 +221,30 @@ def summary_line(variety: str, so_far_cp: float, target_cp: float, verdict_band:
     return f"Your {variety} trees have {amount} ({progress_pct(so_far_cp, target_cp)}%). {band_words}{like}."
 
 
+def round_to_half(x: float) -> float:
+    """Round to the nearest half, the way growers read a number: 3.52 -> 3.5, 2.43 -> 2.5."""
+    return round(x * 2) / 2
+
+
+def half_words(x: float) -> str:
+    """A whole or half number as words print it: 3.5 -> '3½', 4.0 -> '4'."""
+    whole = int(x)
+    return f"{whole}½" if x - whole == 0.5 else f"{whole}"
+
+
+def how_sure_line() -> str:
+    """One plain sentence on how close the estimate usually is, from the hold-out table (config.HOW_SURE_*).
+
+    Uses the combined typical miss over both stations, rounded to a half, and says in how many winters
+    that was true, so "usually" is never an overclaim. Per-station numbers are in the Details layer.
+    """
+    x = half_words(round_to_half(config.HOW_SURE_TYPICAL_MISS_ALL_CP))
+    n_stations = len(config.HOW_SURE_WINTERS)
+    return (f"In tests where we hid a real weather station, our estimate was usually within about {x} "
+            f"chill portions of what it measured ({config.HOW_SURE_WINTERS_WITHIN} of "
+            f"{config.HOW_SURE_WINTERS_ALL} winters at {n_stations} stations).")
+
+
 def decision_line(d: dict) -> str:
     """Glance-card decision sentence. Never names a product, rate or date to apply."""
     s = d["status"]

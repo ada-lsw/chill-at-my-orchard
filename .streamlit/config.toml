@@ -1,0 +1,14 @@
+# App-wide look for growers (Streamlit reads this from the folder the app starts in).
+# Keep this file and the copy in the repo-root .streamlit/ folder identical: the root copy is for
+# Streamlit Community Cloud, this one for `cd frontend && streamlit run app.py` (local, Codespaces, VS Code).
+
+[theme]
+base = "light"
+primaryColor = "#3a6b35"              # orchard green for buttons and links (red read as "danger")
+backgroundColor = "#fbf8f1"           # warm cream page
+secondaryBackgroundColor = "#efe9dc"  # soft wheat for boxes, inputs and the sidebar
+textColor = "#2b2a26"                 # dark brown-gray: strong contrast outdoors on a phone
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"               # hides "Deploy" and developer options from growers

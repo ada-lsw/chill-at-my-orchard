@@ -73,6 +73,8 @@ class EstimateResponse(Open):
     crop: str
     data_source: str
     summary: str = Field(description="One plain sentence for the glance card, already worded")
+    how_sure: str = Field(description="One plain sentence on how close our estimates usually are, from "
+                                      "hiding real stations for 19 winters (pitch/validation.csv); already worded")
     verdict: Verdict
     target: Target
     chill: ChillSoFar
@@ -169,3 +171,10 @@ class HistoryResponse(Open):
         description="Fitted line at the first and last season; null if too few winters")
     seasons_used: int
     seasons_skipped: list[SkippedSeason] = Field(description="Winters not counted (nothing saved, or not finished)")
+
+
+# ---------------------------------------------------------------- /glossary
+
+class GlossaryResponse(Open):
+    measures: dict[str, str] = Field(
+        description="One plain line explaining each number the Details layer shows (config.MEASURE_HELP)")

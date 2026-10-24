@@ -92,6 +92,10 @@ APPTEST = textwrap.dedent("""
         assert not [e.value for e in at.error if not e.value.startswith("**")], [e.value for e in at.error]
         assert any("CHILL SO FAR" in t for t in texts), texts
         assert any(word in h.value for h in at.subheader)
+        # The share link sits in its own "Share my data" drop-down at the bottom, not on the glance card.
+        share = [e for e in at.expander if e.label == "Share my data"]
+        assert share and any("opens this orchard" in m.value for m in share[0].markdown), [e.label for e in at.expander]
+        assert not any("Share with my PCA" in t for t in texts), texts
     print("BOTH DEMOS OK")
 """)
 

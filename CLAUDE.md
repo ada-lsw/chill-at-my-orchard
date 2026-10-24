@@ -84,6 +84,7 @@ docs/WORK_PACKAGES.md                                                           
 - **Run without Docker** (works in Codespaces): `cd backend && uvicorn app.main:app --reload`, then in a second terminal `cd frontend && streamlit run app.py`. In VS Code: Run and Debug → Backend + Frontend.
 - **Data source:** `DATA_SOURCE=synthetic` (default, no key or internet needed) or `cimis`. Build and test on synthetic; check real data before demo.
 - **Real data:** `python scripts/check_cimis.py`, then `python scripts/warm_cache.py`.
+- **Verifying a real-data result:** one run is never proof. Also run nearby inputs (other dates, varieties, pins) and check that the outputs make sense together: totals rise over the season, a higher target is reached in fewer past winters, and each status matches its rule. Use this to check the logic, never to pick a demo date or setting by which one looks best.
 - **Tests:** `cd backend && python -m pytest -q`. Run before every PR; GitHub Actions runs them on every push. Add a test when you change anything in `backend/app/`.
 - **Frontend check:** run the app and click both demo buttons. No red errors, glance card readable.
 - **Dependencies:** Python 3.12. Add packages to `backend/requirements.txt` or `frontend/requirements.txt`, and say so in the PR.

@@ -18,10 +18,17 @@ client = TestClient(main.app)
 DEMOS = sorted(config.DEMO_ORCHARDS)
 
 
-def demo_params(demo: dict) -> dict:
-    """The query frontend/app.py sends for a demo, with a short history to keep CI quick."""
+def demo_params(demo: dict, exclude: list[str] | None = None) -> dict:
+    """A demo's query with a short history to keep CI quick. By default the hold-out station is hidden
+    (the accuracy proof's scenario); pass `exclude` to send what the picker sends instead."""
+    hidden = [demo["holdout_station"]] if exclude is None else exclude
     return {"lat": demo["lat"], "lon": demo["lon"], "as_of": demo["as_of"], "variety": demo["variety"],
-            "exclude": [demo["holdout_station"]], "history_seasons": 3}
+            "exclude": hidden, "history_seasons": 3}
+
+
+def picker_exclude(demo: dict) -> list[str]:
+    """What the picker hides for a demo button: the hold-out station only if the demo says to hide it."""
+    return [demo["holdout_station"]] if demo["hide_in_demo"] else []
 
 
 @pytest.fixture
@@ -60,6 +67,23 @@ def test_demo_runs_without_its_holdout(key, neighbor_spy):
     assert neighbor_spy and hidden not in neighbor_spy    # nor in any window of either endpoint
     assert est.json()["target"]["variety"] == demo["variety"]
     assert dec.json()["variety"] == demo["variety"]       # /decision has variety at the top level
+
+
+def test_each_demo_says_whether_it_hides_its_station():
+    """Durham's story is the removed station, so the demo hides it; Kern shows Shafter's own data (Ada, Oct 24)."""
+    assert config.DEMO_ORCHARDS["durham"]["hide_in_demo"] is True
+    assert config.DEMO_ORCHARDS["kern"]["hide_in_demo"] is False
+
+
+def test_kern_demo_uses_shafter_and_durham_still_hides_12():
+    """With the picker's rule, the Kern estimate includes Shafter (5) and the Durham request still hides 12."""
+    kern, durham = config.DEMO_ORCHARDS["kern"], config.DEMO_ORCHARDS["durham"]
+    k = client.get("/estimate", params=demo_params(kern, picker_exclude(kern)))
+    d = client.get("/estimate", params=demo_params(durham, picker_exclude(durham)))
+    assert k.status_code == 200 and d.status_code == 200
+    assert "5" in [n["station_id"] for n in k.json()["neighbors"]]
+    assert k.json()["excluded"] == []
+    assert d.json()["excluded"] == ["12"]
 
 
 @pytest.mark.parametrize("key", DEMOS)

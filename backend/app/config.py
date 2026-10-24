@@ -130,15 +130,17 @@ DEMO_ORCHARDS = {
         "label": "Durham walnuts, Butte County (station removed)",
         "lat": 39.61, "lon": -121.82, "variety": "Chandler walnut",
         "holdout_station": "12",  # Durham CIMIS station, stopped reporting July 2025
+        "hide_in_demo": True,     # the story is the removed station, so the demo estimates without it
         "as_of": "2026-02-01",    # replay the first winter with no Durham station
     },
     "kern": {
         "label": "Kern pistachios (far from a station)",
-        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list) while
-        # Shafter is hidden: the hold-out proof (/validate for station 5) then measures the
-        # estimate's error at exactly the spot this demo shows.
+        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list). The
+        # hold-out proof (/validate for station 5) hides Shafter and measures the estimate's error
+        # at exactly this spot; the demo itself shows Shafter's real data (Ada's decision, Oct 24).
         "lat": 35.532556, "lon": -119.28179, "variety": "Kerman pistachio",
-        "holdout_station": "5",   # hide Shafter to prove the estimate where stations are sparse
+        "holdout_station": "5",   # hidden only in the accuracy proof (/validate, warm_cache.py)
+        "hide_in_demo": False,    # the demo button keeps Shafter: the grower sees its own reading
         "as_of": "2026-02-01",
     },
 }

@@ -14,7 +14,7 @@ Deadlines: code freeze **Saturday 2:00pm**, submit by **2:45pm**. No new feature
 |---|---|---|---|
 | Backend A: real data, proof, hourly-from-daily | Ada | `backend/app/data.py`, `interp.py`, `decision.py`, `main.py`, `scripts/` | Real data cached for both demos |
 | Backend B: FNRIC data, golden tests, long view | (name) | `backend/app/fnric.py` (new), `backend/tests/test_golden.py` (new), `/history` in `main.py` | FNRIC client that caches one station |
-| Frontend A: picker and glance card | (name) | `frontend/app.py`, `frontend/components/picker.py`, `glance.py` | Glance card readable on a phone |
+| Frontend A: picker and glance card | Sevim | `frontend/app.py`, `frontend/components/picker.py`, `glance.py` | Glance card readable on a phone |
 | Frontend B: compare, long view, details | Drew | `frontend/components/compare.py`, `history_panel.py`, `details.py` | "Is chill declining here?" long view (from PR #3) |
 | Pitch and mentors (optional 5th person) | (name) | `pitch/` | Mentor answers in the Build details tab |
 

@@ -17,7 +17,7 @@ def show(est: dict):
     started = grower_date(ch["start"])
     a2, a3 = st.columns(2)
     if p:
-        a2.metric("Compared with a typical year", vs_typical(cp - p["p50"]),
+        a2.metric("Compared with a typical year", vs_typical(round(cp) - round(p["p50"])),  # same rounded numbers as the help text, so they agree
                   help=f"This winter: {cp:.0f} chill portions. A typical year has {p['p50']:.0f} "
                        f"by this date. Both counted since {started}.")
     source = outlook_source(proj)

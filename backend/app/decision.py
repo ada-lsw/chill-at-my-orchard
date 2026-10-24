@@ -208,9 +208,13 @@ def trend_sentence(direction: str, season_labels: list[str], per_decade: float |
     span = first if n == 1 else f"{first} to {last}"
     counted = f"Chill is counted from {_fmt_month_day(config.CHILL_START)} to {_fmt_month_day(seasons.CHILL_END)}."
     if direction == "too few winters":
-        return f"Only {n} winter{'s' if n > 1 else ''} of data here ({span}), too few to tell whether chill is changing. {counted}"
+        winters = f"{n} winter{'s' if n > 1 else ''}"
+        return f"Only {winters} of data here ({span}), too few to tell whether chill is changing. {counted}"
     contiguous = int(last[:4]) - int(first[:4]) + 1 == n
-    lead = f"Over the last {n} winters here ({span})" if contiguous else f"Over {n} winters here between {first} and {last}"
+    if contiguous:
+        lead = f"Over the last {n} winters here ({span})"
+    else:
+        lead = f"Over {n} winters here between {first} and {last}"
     if direction in ("falling", "rising"):
         verb = "fell" if direction == "falling" else "rose"
         share = f", about {round(100 * abs(per_decade) / typical_cp)}% of a typical winter here" if typical_cp else ""

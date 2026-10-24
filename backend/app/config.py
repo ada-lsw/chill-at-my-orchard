@@ -129,10 +129,9 @@ HISTORY_SEASONS = 10
 # stays on one side of zero: 95% is the usual statistics convention, approved by Ada.
 MIN_TREND_SEASONS = 5
 TREND_CONFIDENCE = 0.95
-# Most winters the long view looks back when it reads FNRIC's daily chill history (real-data mode).
-# FNRIC's oldest CIMIS station records start in 1982 (data/cache/fnric_CIMIS-*.csv), so 45 winters back
-# from 2025-26 reaches 1980-81 and covers all of them; older winters are listed as skipped.
-# DECISION FOR ADA: 45 is a cap chosen to cover the files we have, not a number from a source.
+# Default number of past winters the long view (/history) looks back, on either source; a caller's
+# max_seasons overrides it. A cap to reach FNRIC's oldest files (1982); not from a source.
+# (45 winters back from 2025-26 reaches 1980-81; winters with no saved data are listed as skipped.)
 LONG_VIEW_MAX_SEASONS = int(os.getenv("LONG_VIEW_MAX_SEASONS", 45))
 
 # Decision support. Status counts how many past seasons, added to chill so far, reach the

@@ -3,6 +3,7 @@
 Trend rule: say chill is falling or rising only when the 95% confidence range of the
 straight-line slope stays on one side of zero; otherwise say there is no clear change.
 """
+import inspect
 import os
 import time
 from datetime import date, timedelta
@@ -108,16 +109,27 @@ def test_typical_winter_is_the_median(monkeypatch):
     monkeypatch.setattr(main, "_season_total", lambda *a: (rows.pop(0) | {"hours_missing": 0}, None))
     monkeypatch.setattr(main, "pin_elevation", lambda lat, lon, exclude=(): (40.0, "test"))
     monkeypatch.setattr(decision, "trend_sentence",
-                        lambda direction, labels, per_decade, typical: seen.setdefault("typical", typical) and "")
+                        lambda direction, labels, per_decade, typical, **k: seen.setdefault("typical", typical) and "")
     client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 5})
     assert seen["typical"] == 54.0                     # the mean would be 62.4
 
 
-def test_no_clear_change_sentence_says_too_few_winters_to_tell():
+def test_no_clear_change_sentence_never_says_too_few_with_enough_winters():
+    """With at least MIN_TREND_SEASONS winters, "no clear change" is not "too few to tell" (43 winters isn't few)."""
     sentence = decision.trend_sentence("no clear change", ["2015-16", "2016-17", "2017-18", "2018-19",
                                                            "2019-20", "2020-21"], -1.2, 60.0)
-    assert "no clear" in sentence and "6 winters is too few to tell" in sentence
-    assert "fell" not in sentence and "rose" not in sentence
+    assert sentence == ("Over the last 6 winters here (2015-16 to 2020-21), chill shows no clear rise or fall. "
+                        "Chill is counted from Sep 1 to Mar 31.")
+    assert "too few" not in sentence and "fell" not in sentence and "rose" not in sentence
+
+
+def test_only_the_too_few_path_says_too_few():
+    """Fewer than MIN_TREND_SEASONS winters is the one place the sentence says "too few to tell"."""
+    labels = [f"{2020 + i}-{21 + i}" for i in range(config.MIN_TREND_SEASONS - 1)]
+    assert "too few to tell" in decision.trend_sentence("too few winters", labels, None, 60.0)
+    for direction in ("no clear change", "falling", "rising"):
+        many = [f"{1990 + i}-{str(1991 + i)[-2:]}" for i in range(43)]
+        assert "too few" not in decision.trend_sentence(direction, many, -1.0, 60.0)
 
 
 def test_trend_line_ends_and_rate_match_a_straight_line_fit():
@@ -240,18 +252,23 @@ HISTORY_FIELDS = {"location", "season_end", "seasons", "trend_cp_per_decade", "s
                   "trend_direction", "trend_line", "seasons_used", "seasons_skipped"}
 
 
-def write_fnric(folder, station_id: str, years, portions_per_day: float, drop_days=()):
+def write_fnric(folder, station_id: str, years, portions_per_day, drop_days=(), zero_days=()):
     """Save a tiny FNRIC CSV: every day from Sept 1 to Mar 31 of each winter, the same daily portions.
 
+    portions_per_day: one number for every winter, or a dict {winter start year: number}.
     drop_days: dates written as a row of empty values (how FNRIC marks a day with no data).
+    zero_days: dates written as 0 in all four columns (how some FNRIC gaps look; they count as missing).
     """
     lines = [",".join(f'"{c}"' for c in FNRIC_COLUMNS)]
     for y in years:
+        cp = portions_per_day[y] if isinstance(portions_per_day, dict) else portions_per_day
         for d in pd.date_range(date(y, 9, 1), date(y + 1, 3, 31), freq="D"):
             if d.date() in drop_days:
                 lines.append(f'"{d.date()}",,,,')
+            elif d.date() in zero_days:
+                lines.append(f'"{d.date()}",0,0,0,0')
             else:
-                lines.append(f'"{d.date()}",1.0,1.0,1.0,{portions_per_day}')
+                lines.append(f'"{d.date()}",1.0,1.0,1.0,{cp}')
     (folder / f"fnric_CIMIS-{station_id}.csv").write_text("\n".join(lines) + "\n")
 
 
@@ -365,12 +382,96 @@ def test_fnric_history_never_calls_the_downloader(fnric_cache, monkeypatch):
 
 
 def test_real_data_mode_defaults_to_fnric_and_reaches_back(fnric_cache):
-    """Without a source, real-data mode uses FNRIC and looks back LONG_VIEW_MAX_SEASONS winters, even when
-    the frontend asks for max_seasons=15 (that limit is for rebuilding winters from hourly data)."""
+    """Without a source or max_seasons, real-data mode uses FNRIC and looks back LONG_VIEW_MAX_SEASONS winters."""
     folder, _, _ = fnric_cache
     write_fnric(folder, "1", range(1985, 2022), 0.4)
-    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2023-02-01", "max_seasons": 15})
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2023-02-01"})
     assert r.status_code == 200, r.text
     h = r.json()
     assert h["source"] == "fnric" and h["seasons_used"] == 37
     assert h["seasons"][0]["season"] == "1985-86"
+    assert h["seasons_used"] + len(h["seasons_skipped"]) == config.LONG_VIEW_MAX_SEASONS
+
+
+def test_max_seasons_defaults_to_the_config_cap():
+    """max_seasons is optional; its default is config.LONG_VIEW_MAX_SEASONS on every path."""
+    assert inspect.signature(main.history_endpoint).parameters["max_seasons"].default.default \
+        == config.LONG_VIEW_MAX_SEASONS
+
+
+def test_fnric_path_honors_max_seasons(fnric_cache):
+    """A caller asking for 15 winters gets at most 15 (counted and skipped together), never 43."""
+    folder, _, _ = fnric_cache
+    write_fnric(folder, "1", range(1985, 2022), 0.4)
+    h = fnric_history(max_seasons=15)
+    assert h["source"] == "fnric"
+    assert h["seasons_used"] + len(h["seasons_skipped"]) == 15
+    assert h["seasons"][0]["season"] == "2007-08" and h["seasons"][-1]["season"] == "2021-22"
+
+
+def test_stations_path_honors_max_seasons_and_says_its_source():
+    """source=stations rebuilds winters from saved hourly data, max_seasons of them; source names the data used."""
+    r = client.get("/history", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01", "max_seasons": 3,
+                                       "source": "stations"})
+    assert r.status_code == 200, r.text
+    h = r.json()
+    assert h["source"] == config.DATA_SOURCE == "synthetic" and h["seasons_used"] == 3
+
+
+def test_all_zero_fnric_days_are_missing_and_neighbors_carry_them(fnric_cache):
+    """A day written as 0 in all four columns is a gap: that station drops out of the day's blend.
+
+    Station 2 has a zero row on Dec 1, 2020; stations 1 and 3 carry the day, so nothing is missing and the
+    total is the blend of 1 and 3 on that day (not a blend pulled down by station 2's fake 0).
+    """
+    folder, stations, _ = fnric_cache
+    values = {"1": 0.5, "2": 0.3, "3": 0.1}
+    gap = date(2020, 12, 1)
+    for sid, v in values.items():
+        write_fnric(folder, sid, [2020], v, zero_days=(gap,) if sid == "2" else ())
+    km = {r.station_id: float(interp.haversine_km(39.61, -121.82, r.lat, r.lon)) for r in stations.itertuples()}
+    w = {sid: 1.0 / max(d, 0.5) ** config.IDW_POWER for sid, d in km.items()}
+
+    def blend(sids):
+        return sum(w[s] * values[s] for s in sids) / sum(w[s] for s in sids)
+    days = (date(2021, 3, 31) - date(2020, 9, 1)).days + 1
+    s = fnric_history()["seasons"][0]
+    assert s["days_missing"] == 0 and s["complete"] is True
+    assert s["chill_portions"] == round((days - 1) * blend(["1", "2", "3"]) + blend(["1", "3"]), 1)
+
+
+def test_a_day_all_stations_write_as_zero_is_missing(fnric_cache):
+    """If every neighbor has a zero row on a day, the day is missing (days_missing), never 0 chill."""
+    folder, _, _ = fnric_cache
+    gaps = (date(2022, 1, 15), date(2022, 1, 16))
+    for sid in ("1", "2", "3"):
+        write_fnric(folder, sid, [2021], 1.0, zero_days=gaps)
+    s = fnric_history()["seasons"][0]
+    days = (date(2022, 3, 31) - date(2021, 9, 1)).days + 1
+    assert s["days_missing"] == 2 and s["hours_missing"] == 48 and s["complete"] is False
+    assert s["chill_portions"] == days - 2
+
+
+def test_incomplete_winters_are_shown_flagged_but_left_out_of_the_trend(fnric_cache):
+    """A winter with any missing day stays in seasons (complete: false) but never enters the trend fit.
+
+    Ten flat complete winters, then three recent winters with a 60-day gap written as zeros. Counted as
+    zero chill, those gaps would make the trend "falling"; left out, the trend is flat.
+    """
+    folder, _, _ = fnric_cache
+    years = range(2009, 2022)
+    gap = {d.date() for y in (2019, 2020, 2021) for d in pd.date_range(date(y, 11, 15), periods=60, freq="D")}
+    noise = {y: 0.30 + 0.01 * ((y * 7) % 5) for y in years}
+    for sid in ("1", "2", "3"):
+        write_fnric(folder, sid, years, noise, zero_days=gap)
+    h = fnric_history()
+    flags = {s["season"]: s["complete"] for s in h["seasons"]}
+    assert len(flags) == 13 and h["seasons_used"] == 13
+    assert [k for k, ok in flags.items() if not ok] == ["2019-20", "2020-21", "2021-22"]
+    assert h["seasons_in_trend"] == 10
+    expected = main.trend_fit([s for s in h["seasons"] if s["complete"]])
+    assert h["trend_direction"] == expected["direction"] != "falling"
+    assert h["trend_cp_per_decade"] == expected["per_decade"]
+    assert h["trend_line"]["end"]["season"] == "2018-19"          # the line ends at the last winter in the fit
+    # Later winters are shown but left out, so these 10 are not "the last 10 winters"
+    assert h["trend_sentence"].startswith("Over 10 winters here between 2009-10 and 2018-19")

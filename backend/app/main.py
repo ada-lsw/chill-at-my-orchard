@@ -482,20 +482,34 @@ def trend_fit(rows: list[dict]) -> dict:
             "line": {"start": on_line(0), "end": on_line(-1)}}
 
 
+def _complete(row: dict) -> bool:
+    """True if a winter has no missing day after blending (days_missing 0, FNRIC path).
+
+    Only complete winters enter the trend fit: a missing day lowers a winter's total, and a run of gaps in
+    recent winters would pull the trend down. Incomplete winters are still listed, flagged complete: false.
+    The stations path reports no days_missing, so its winters count as before (missing hours are still
+    reported in hours_missing).
+    """
+    return not row.get("days_missing")
+
+
 @app.get("/history", response_model=HistoryResponse)
 def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory=date.today),
-                     max_seasons: int = 15, exclude: list[str] = Query(default=[]),
+                     max_seasons: int = Query(default=config.LONG_VIEW_MAX_SEASONS, ge=1,
+                                              description="Most past winters to look back, on either source"),
+                     exclude: list[str] = Query(default=[]),
                      source: Literal["auto", "fnric", "stations"] = "auto"):
     """Season-end chill portions at the pin for past seasons, with a trend (Julia's long-horizon ask).
 
     Reads only data already saved on this machine and never downloads, so asking for many winters
-    is safe. Winters it can't count are listed in seasons_skipped with the reason.
+    is safe. Looks back max_seasons winters (default config.LONG_VIEW_MAX_SEASONS) on either source.
+    Winters it can't count are listed in seasons_skipped with the reason. Winters with any missing
+    data are listed but left out of the trend (see _complete).
     source:
     - "fnric": FNRIC's daily chill history per station (back to 1982), blended like the app's estimate.
-      Looks back config.LONG_VIEW_MAX_SEASONS winters; max_seasons does not apply, because it limits
-      rebuilding winters from hourly data, and FNRIC files are small and already summed per day.
-    - "stations": rebuild each winter from saved hourly station data, at most max_seasons winters.
+    - "stations": rebuild each winter from saved hourly station data.
     - "auto" (default): "fnric" with real data, "stations" with synthetic data.
+    The response's source says what was used: "fnric", or the station data's source ("cimis", "synthetic").
     """
     elev, elev_source = pin_elevation(lat, lon, exclude)
     c_start = seasons.chill_season_start(as_of)
@@ -510,23 +524,25 @@ def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory
         def season_total(s0, e0):
             return _season_total(lat, lon, elev, s0, e0, exclude)
     rows, skipped = [], []
-    for k in range(1, (config.LONG_VIEW_MAX_SEASONS if use_fnric else max_seasons) + 1):
+    for k in range(1, max_seasons + 1):
         s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
         label = seasons.season_label(s0.year)
         row, reason = season_total(s0, e0)
         if row:
-            rows.append({"season": label, **row})
+            rows.append({"season": label, **row, "complete": _complete(row)})
         else:
             skipped.append({"season": label, "reason": reason})
     rows.sort(key=lambda r: r["season"])
     skipped.sort(key=lambda r: r["season"])
-    trend = trend_fit(rows)
-    typical = float(np.median([r["chill_portions"] for r in rows])) if rows else None
+    in_trend = [r for r in rows if r["complete"]]
+    trend = trend_fit(in_trend)
+    typical = float(np.median([r["chill_portions"] for r in in_trend])) if in_trend else None
     return {"location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
             "season_end": f"{seasons.CHILL_END[0]:02d}-{seasons.CHILL_END[1]:02d}",
             "seasons": rows, "trend_cp_per_decade": trend["per_decade"],
             "source": "fnric" if use_fnric else config.DATA_SOURCE,
             "trend_direction": trend["direction"], "trend_line": trend["line"],
-            "trend_sentence": decision.trend_sentence(trend["direction"], [r["season"] for r in rows],
-                                                      trend["per_decade"], typical),
-            "seasons_used": len(rows), "seasons_skipped": skipped}
+            "trend_sentence": decision.trend_sentence(trend["direction"], [r["season"] for r in in_trend],
+                                                      trend["per_decade"], typical,
+                                                      shown_labels=[r["season"] for r in rows]),
+            "seasons_used": len(rows), "seasons_in_trend": len(in_trend), "seasons_skipped": skipped}

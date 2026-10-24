@@ -36,7 +36,7 @@ def _skipped_caption(skipped: list[dict]):
 
 def show(place: dict, est: dict):
     """Draw the long view: bars per season, the variety's target, the backend's trend line, its sentence and a crop note."""
-    h = get("/history", lat=place["lat"], lon=place["lon"], as_of=place["as_of"], max_seasons=15)
+    h = get("/history", lat=place["lat"], lon=place["lon"], as_of=place["as_of"])
     if not h["seasons"]:
         st.info(h["trend_sentence"])   # the backend's "No past winters with saved data here yet."
         return

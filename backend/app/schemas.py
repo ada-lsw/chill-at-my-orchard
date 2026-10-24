@@ -73,6 +73,8 @@ class EstimateResponse(Open):
     crop: str
     data_source: str
     summary: str = Field(description="One plain sentence for the glance card, already worded")
+    how_sure: str = Field(description="One plain sentence on how close our estimates usually are, from "
+                                      "hiding real stations for 19 winters (pitch/validation.csv); already worded")
     verdict: Verdict
     target: Target
     chill: ChillSoFar

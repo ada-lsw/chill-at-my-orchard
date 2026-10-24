@@ -21,12 +21,18 @@ def _day(iso: str) -> str:
     return f"{d:%b} {d.day}"
 
 
+def _season_label(season: str) -> str:
+    """The backend's '2024-09-01 to 2025-02-28' -> 'Sep 1, 2024 to Feb 28, 2025' (display only)."""
+    start, end = (date.fromisoformat(part.strip()) for part in season.split(" to "))
+    return f"{_day(str(start))}, {start.year} to {_day(str(end))}, {end.year}"
+
+
 def show(place: dict, est: dict, dec: dict):
     """Draw the Details layer: the measures, the grower's range, options for a PCA, and the proof."""
     _measures(est)
     _custom_range(est["chill"]["custom_range"])
     _pca_options(dec)
-    _proof(place.get("holdout_station"))
+    _proof(place.get("holdout_station"), est)
 
 
 def _measures(est: dict):
@@ -68,12 +74,16 @@ def _pca_options(dec: dict):
     st.caption(dec["guardrail"])
 
 
-def _proof(station: str | None):
-    """Accuracy check: hide the real station, estimate it from its neighbors, compare."""
+def _proof(station: str | None, est: dict):
+    """Accuracy: the backend's how-sure sentence over all tested winters, then one winter's check
+    (hide the real station, estimate it from its neighbors, compare)."""
     if not station:
         return
-    st.markdown("**How accurate is this?** We hid the real station and estimated it from its neighbors.")
+    st.markdown(f"**How accurate is this?** {est['how_sure']}")
+    st.caption(help_for("how_sure_by_station"))
+    st.markdown("One of those winters, with this station hidden:")
     v = get("/validate", station_id=station)
+    season = _season_label(v["season"])
     w, n = v["with_elevation_adjustment"], v["no_elevation_adjustment"]
     b1, b2, b3 = st.columns(3)
     b1.metric("Actual chill portions", f"{w['actual']['chill_portions']:.1f}", help=help_for("proof_actual"))
@@ -83,7 +93,7 @@ def _proof(station: str | None):
     # The shipped setting has no elevation adjustment (config.LAPSE_F_PER_M = 0), so both runs are identical.
     # Show the comparison only when the two numbers actually differ.
     if n["error"]["chill_portions"] != w["error"]["chill_portions"]:
-        st.caption(f"Season {v['season']}. Without the elevation adjustment: {n['error']['chill_portions']:+.1f} portions.",
+        st.caption(f"Winter {season}. Without the elevation adjustment: {n['error']['chill_portions']:+.1f} portions.",
                    help=help_for("proof_no_elevation"))
     else:
-        st.caption(f"Season {v['season']}.")
+        st.caption(f"Winter {season}.")

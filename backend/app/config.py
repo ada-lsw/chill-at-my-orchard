@@ -183,6 +183,21 @@ DEMO_ORCHARDS = {
     },
 }
 
+# ---------------------------------------------------------------- how sure we are
+# Hold-out test: hide a real station for a whole winter, estimate it from its neighbors, compare.
+# Every number below: `pitch/validation.csv`, setting "elevation off, 3 neighbors, caps on" (the
+# shipped setting), made by `scripts/validation_table.py`. Miss = size of the chill-portion error.
+# tests/test_how_sure.py recomputes each one from the CSV, so rerun that test after rerunning the script.
+HOW_SURE_SETTING = "elevation off, 3 neighbors, caps on"
+# Typical miss (average size of the error), chill portions, per hidden station. 12 = Durham, 5 = Shafter (Kern pin).
+HOW_SURE_TYPICAL_MISS_CP = {"12": 2.43, "5": 4.49}
+HOW_SURE_WINTERS = {"12": 9, "5": 10}          # winters tested per station
+HOW_SURE_TYPICAL_MISS_ALL_CP = 3.52            # typical miss over all winters at both stations
+HOW_SURE_WINTERS_ALL = 19                      # winters tested, both stations
+HOW_SURE_WORST_MISS_CP = 10.4                  # largest single-winter miss (Shafter)
+HOW_SURE_WINTERS_WITHIN = 12                   # winters within 3.5 (the typical miss rounded to a half)
+HOW_SURE_KERN_TOO_HIGH = 9                     # Shafter winters where the estimate was too high (of 10)
+
 # ---------------------------------------------------------------- Details layer explanations
 # One plain line for every number the Details layer ("Show the numbers") shows; served by /glossary.
 # Each line restates a definition already in the repo (chill.py docstrings and Utah bins,
@@ -214,4 +229,9 @@ MEASURE_HELP = {
     "proof_hourly_error": ("How far off our hourly temperatures typically were at that station, in °F "
                            "(root mean square error)."),
     "proof_no_elevation": "The same check without adjusting temperatures for differences in height.",
+    "how_sure_by_station": (
+        f"Typical miss: Durham {HOW_SURE_TYPICAL_MISS_CP['12']:.1f} chill portions over "
+        f"{HOW_SURE_WINTERS['12']} winters; Shafter (Kern) {HOW_SURE_TYPICAL_MISS_CP['5']:.1f} over "
+        f"{HOW_SURE_WINTERS['5']}, too high in {HOW_SURE_KERN_TOO_HIGH} of them. "
+        f"Worst single winter: {HOW_SURE_WORST_MISS_CP:.1f}."),
 }

@@ -91,12 +91,20 @@ def _custom_range(r: dict):
 
 
 def _pca_options(dec: dict):
-    """What low chill can do, option types to raise with a PCA (with sources), and the guardrail."""
+    """What low chill can do, option types to raise with a PCA (with sources), and the guardrail.
+
+    Whenever options are listed, the backend's ready-made "talk to your PCA" sentence
+    (dec["pca_handoff"]) is shown right after them, word for word, so the list always
+    ends by sending the grower to their Pest Control Adviser.
+    """
     st.markdown("**What low chill can do:** " + ", ".join(dec["low_chill_symptoms"]) + ".")
     if dec["options"]:
         st.markdown("**Options to raise with your PCA:**")
         for o in dec["options"]:
             st.markdown(f"- {o['type']}: {o['detail']} ([source]({o['source']}))")
+        # Backend wording, shown as is (frontend never writes its own wording).
+        if dec.get("pca_handoff"):
+            st.markdown(dec["pca_handoff"])
     st.caption(dec["guardrail"])
 
 

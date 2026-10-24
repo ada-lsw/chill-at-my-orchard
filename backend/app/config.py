@@ -162,7 +162,7 @@ DEMO_ORCHARDS = {
 MEASURE_HELP = {
     "chill_start": "Every chill number here counts from this date.",
     "chill_portions": ("Winter chill counted with the Dynamic Model, the same unit as your variety's "
-                       "chill target. FNRIC calls it more a research tool than a rule."),
+                       "chill target."),
     "chill_hours": "Hours when the air was above 32°F and at or below 45°F.",
     "hours_lt_45": "Hours when the air was at or below 45°F, freezing hours included.",
     "utah_units": ("Utah model: each hour adds chill by its temperature, most between 36°F and 48°F, "

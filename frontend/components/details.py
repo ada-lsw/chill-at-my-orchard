@@ -80,5 +80,10 @@ def _proof(station: str | None):
     b2.metric("Our estimate", f"{w['estimated']['chill_portions']:.1f}",
               f"{w['error']['chill_portions']:+.1f}", delta_color="off", help=help_for("proof_estimate"))
     b3.metric("Hourly error", f"{w['hourly_rmse_F']} °F", help=help_for("proof_hourly_error"))
-    st.caption(f"Season {v['season']}. Without the elevation adjustment: {n['error']['chill_portions']:+.1f} portions.",
-               help=help_for("proof_no_elevation"))
+    # The shipped setting has no elevation adjustment (config.LAPSE_F_PER_M = 0), so both runs are identical.
+    # Show the comparison only when the two numbers actually differ.
+    if n["error"]["chill_portions"] != w["error"]["chill_portions"]:
+        st.caption(f"Season {v['season']}. Without the elevation adjustment: {n['error']['chill_portions']:+.1f} portions.",
+                   help=help_for("proof_no_elevation"))
+    else:
+        st.caption(f"Season {v['season']}.")

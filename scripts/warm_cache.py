@@ -5,9 +5,12 @@ Run from the repo root after scripts/check_cimis.py passes:
     python scripts/warm_cache.py              # 11 seasons (this one + 10 past) for both demos
     python scripts/warm_cache.py --seasons 5  # quicker first pass
 
-For each demo orchard it caches the same station pool the app uses (interp.candidates): the
-stations around the pin, the hold-out station, and the stations around the hold-out (for the
-proof). Closed stations are included, because their old data helps estimate past winters.
+For each demo orchard and each season it does the same walk the app does
+(interp.candidates, then interp.pick_neighbors): closest station first, keeping the first
+NEIGHBORS that have data that season. It does this twice, around the pin (the demo) and around
+the hold-out station (the proof), and caches the hold-out station itself. So the demo uses
+exactly the stations cached here. Closed stations are tried too, because their old data helps
+past winters; a season with no data is cached as empty, so it is never requested again.
 One station and one season per request (CIMIS refuses large requests), pausing between requests.
 Re-running skips anything already cached, so it is safe to stop and restart.
 Files land in data/cache/ (git-ignored). Copy that folder to the demo laptops.
@@ -35,35 +38,37 @@ def main():
     this_season = data.season_year(date.today())
     years = list(range(this_season - args.seasons + 1, this_season + 1))
 
-    wanted = set()
+    def coverage(sid, year):
+        """data.season_coverage, pausing after any real download so CIMIS isn't flooded."""
+        cached = (config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{sid}_{year}.parquet").exists()
+        share = data.season_coverage(sid, year)
+        if not cached:
+            time.sleep(args.pause)
+        return share
+
+    failed = 0
     for key, d in config.DEMO_ORCHARDS.items():
         hold = d["holdout_station"]
         elev, _ = interp.pin_elevation(st, d["lat"], d["lon"])  # also saves the pin's elevation
-        pool = interp.candidates(st, d["lat"], d["lon"], elev, exclude=[hold])
         h = st.set_index("station_id").loc[hold]
-        proof_pool = interp.candidates(st, h.lat, h.lon, h.elev_m, exclude=[hold])
-        print(f"{key}: pin pool " + ", ".join(
-            f"{r.station_id} {r['name']} ({r.dist_km:.0f} km{'' if r.active else ', closed'})"
-            for _, r in pool.iterrows()))
-        wanted.update(pool["station_id"])
-        wanted.update(proof_pool["station_id"])
-        wanted.add(hold)
-
-    jobs = [(s, y) for s in sorted(wanted) for y in years]
-    print(f"{len(wanted)} stations x {len(years)} seasons = {len(jobs)} station-seasons")
-    for i, (sid, y) in enumerate(jobs, 1):
-        cache = config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{sid}_{y}.parquet"
-        if cache.exists() and y != this_season:
-            print(f"  [{i}/{len(jobs)}] {sid} {y}-{y + 1}: cached")
-            continue
-        try:
-            df = data.season_hourly(sid, y)
-            missing = int(df["temp_F"].isna().sum()) if not df.empty else 0
-            print(f"  [{i}/{len(jobs)}] {sid} {y}-{y + 1}: {len(df)} hours, {missing} missing")
-        except Exception as e:  # noqa: BLE001
-            print(f"  [{i}/{len(jobs)}] {sid} {y}-{y + 1}: FAILED ({e}); re-run later")
-        time.sleep(args.pause)
-    print("Done. data/cache/ now holds everything the demo needs.")
+        points = {"demo": (d["lat"], d["lon"], elev), "proof": (h.lat, h.lon, h.elev_m)}
+        print(f"\n{key}")
+        for y in years:
+            try:
+                hold_share = coverage(hold, y)
+                picks = {}
+                for label, (lat, lon, e) in points.items():
+                    cands = interp.candidates(st, lat, lon, e, exclude=[hold])
+                    picks[label] = interp.pick_neighbors(cands, lambda sid: coverage(sid, y))
+            except Exception as e:  # noqa: BLE001
+                failed += 1
+                print(f"  {y}-{str(y + 1)[-2:]}: FAILED ({e}); re-run later")
+                continue
+            line = "  ".join(f"{label}: " + (", ".join(p["station_id"]) or "none")
+                             + (f" (only {len(p)})" if len(p) < config.NEIGHBORS else "")
+                             for label, p in picks.items())
+            print(f"  {y}-{str(y + 1)[-2:]}  hold-out {hold}: {hold_share:.0%}  {line}")
+    print("\nDone." if not failed else f"\n{failed} season(s) failed. Run again to retry just those.")
 
 
 if __name__ == "__main__":

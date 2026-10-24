@@ -127,9 +127,9 @@ def saved_coverage_fn(year: int):
     return lambda station_id: coverage(station_id) if _saved_locally(station_id, year) else 0.0
 
 
-def pin_elevation(lat, lon) -> tuple[float, str]:
-    """Elevation of the pin, falling back to the nearest station when offline."""
-    return interp.pin_elevation(data.get_stations(), lat, lon)
+def pin_elevation(lat, lon, exclude=()) -> tuple[float, str]:
+    """Elevation of the pin, falling back to the nearest station that isn't hidden when offline."""
+    return interp.pin_elevation(data.get_stations(), lat, lon, exclude=exclude)
 
 
 def resolve_variety(variety: str | None, crop: str | None) -> tuple[str, dict]:
@@ -204,7 +204,7 @@ def estimate(
 ):
     vname, vrec = resolve_variety(variety, crop)
     crop = vrec["crop"]
-    elev, elev_source = pin_elevation(lat, lon)
+    elev, elev_source = pin_elevation(lat, lon, exclude)
 
     # 1. So far
     c_start, c_end, complete = seasons.chill_window(as_of)
@@ -337,7 +337,7 @@ def decision_endpoint(
     Informs the decision only. Options are types to raise with a licensed PCA, never rates or timing.
     """
     vname, vrec = resolve_variety(variety, crop)
-    elev, _ = pin_elevation(lat, lon)
+    elev, _ = pin_elevation(lat, lon, exclude)
     c_start, c_end, _ = seasons.chill_window(as_of)
     est, _ = estimate_at(lat, lon, elev, c_start, as_of, exclude)
     est = clip(est, c_start, as_of)
@@ -403,7 +403,7 @@ def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory
     v1 rebuilds each season from hourly station data; work package B3 adds FNRIC's daily chill
     history per station to reach back further.
     """
-    elev, elev_source = pin_elevation(lat, lon)
+    elev, elev_source = pin_elevation(lat, lon, exclude)
     c_start = seasons.chill_season_start(as_of)
     rows, skipped = [], []
     for k in range(1, max_seasons + 1):

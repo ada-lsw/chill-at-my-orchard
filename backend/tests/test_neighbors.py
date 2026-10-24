@@ -169,3 +169,19 @@ def test_history_skips_a_winter_with_no_station_data(monkeypatch):
                                                      "as_of": "2026-02-01", "max_seasons": 5})
     assert r.status_code == 200, r.text
     assert [s["season"] for s in r.json()["seasons"]] == ["2022-23", "2023-24", "2024-25"]
+
+
+@pytest.mark.parametrize("path", ["/estimate", "/history"])
+def test_offline_pin_elevation_never_uses_a_hidden_station(path, monkeypatch):
+    """Offline, the pin's elevation falls back to the nearest station, but never to the one being hidden.
+
+    The pin sits on synthetic Shafter (5, 110 m); with 5 hidden, the nearest other station is Delano (95 m).
+    """
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setattr(interp, "elevation_m", lambda lat, lon: None)      # Open-Meteo unreachable
+    params = {"lat": 35.532556, "lon": -119.28179, "as_of": "2026-02-01", "exclude": ["5"]}
+    params |= {"history_seasons": 1} if path == "/estimate" else {"max_seasons": 1}
+    r = TestClient(main.app).get(path, params=params)
+    assert r.status_code == 200, r.text
+    assert r.json()["location"]["elev_m"] == 95.0

@@ -9,7 +9,7 @@ import streamlit as st
 from api import get
 
 BAR_COLOR = "#1f6f8b"
-TREND_COLOR = "#c0392b"
+TREND_COLOR = "#52514e"   # dark gray: red would read as "bad" and is hard next to teal for color-blind viewers
 
 
 def describe_trend(cp_per_decade, typical):
@@ -30,6 +30,7 @@ def show(place: dict, est: dict):
         st.info("No past seasons available here yet.")
         return
 
+    v = get("/varieties")   # fetched once, used for the caption and the crop note below
     st.subheader("Is chill declining here?")
     labels = [s["season"] for s in h["seasons"]]
     years = [int(s["season"][:4]) for s in h["seasons"]]
@@ -56,9 +57,8 @@ def show(place: dict, est: dict):
         else:
             st.caption(f"Trend: {h['trend_cp_per_decade']:+.1f} chill portions per decade over {len(cp)} seasons.")
     st.caption(f"{len(cp)} seasons is a short record, so this trend is uncertain. "
-               f"{get('/varieties')['climate_caption']}")
+               f"{v['climate_caption']}")
 
-    v = get("/varieties")
     crop = v["varieties"].get(est["target"]["variety"], {}).get("crop")
     if crop in v["crop_context"]:
         st.info(v["crop_context"][crop])

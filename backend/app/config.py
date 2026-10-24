@@ -85,12 +85,13 @@ CLIMATE_CAPTION = ("Across the Central Valley and Central Coast, chill fell abou
 # Zhang et al. 2021, Sci. Total Environ. 791:148025, Conclusions (1): "-0.15CP/year", 1979-2019.
 CROP_CONTEXT = {
     # Jha & Pathak 2024, Commun. Earth Environ. 5:485, Methods: walnut ~700 CH (38-54 CP).
-    "walnut": ("Walnuts need about 38–54 chill portions (Jha & Pathak 2024). They are among the crops "
-               "most exposed to warmer winters in the Central Valley (Pathak et al. 2018)."),
+    # No chill number in the note: the chart's target line already says what this variety needs.
+    "walnut": ("Walnuts are among the crops most exposed to warmer winters in the Central Valley "
+               "(Pathak et al. 2018)."),
     # Jha & Pathak 2024, Methods: pistachio ~1000 CH (36-65 CP). Pathak et al. 2018, Agronomy 8:25,
     # section 4.2: walnut and pistachio need male and female bloom in sync, regulated by chill.
-    "pistachio": ("Pistachios need about 36–65 chill portions (Jha & Pathak 2024). In low-chill years, "
-                  "male and female trees can bloom out of sync, which hurts pollination (Pathak et al. 2018)."),
+    "pistachio": ("In low-chill years, male and female pistachio trees can bloom out of sync, "
+                  "which hurts pollination (Pathak et al. 2018)."),
     # Pathak et al. 2018, section 4.2: low-chill crops including almond unlikely to become critical
     # by 2100. Parker et al. 2021, Sci. Total Environ. 762:143971: almond bloom frost still a risk.
     "almond": ("Almonds have a low chill need, and research expects winter chill to stay sufficient for "

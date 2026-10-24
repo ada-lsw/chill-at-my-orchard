@@ -1,6 +1,14 @@
 """Compare tab: this season vs. past seasons, and the next 14 days.  Owner: Frontend B."""
+from datetime import date
+
 import plotly.graph_objects as go
 import streamlit as st
+
+
+def grower_date(iso: str) -> str:
+    """Turn "2025-09-01" into "Sep 1", the way growers say dates."""
+    d = date.fromisoformat(iso)
+    return f"{d:%b} {d.day}"
 
 
 def show(est: dict):
@@ -55,6 +63,6 @@ def build_chart(est: dict) -> go.Figure:
     fig.add_hline(y=t, line_dash="dash", line_color="#d55e00", line_width=3,
                   annotation_text=f"{est['target']['variety']} needs {t:.0f}")
     fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
-                      xaxis_title=f"Days since {ch['start']}", yaxis_title="Chill portions",
+                      xaxis_title=f"Days since {grower_date(ch['start'])}", yaxis_title="Chill portions",
                       legend=dict(orientation="h", y=-0.25), font=dict(size=14))
     return fig

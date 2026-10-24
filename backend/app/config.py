@@ -86,6 +86,32 @@ VARIETIES = {
 # Crop menu order from the team plan.
 CROP_ORDER = ["walnut", "pistachio", "almond", "prune"]
 
+# Research notes for the "Is chill declining here?" long view, one per crop, served by /varieties.
+# Figures are in chill portions and checked against the papers (page refs in each comment).
+# Where a paper gives no chill-portion figure for a crop, the note states no number.
+CLIMATE_CAPTION = ("Across the Central Valley and Central Coast, chill fell about 1.5 chill portions "
+                   "per decade from 1979 to 2019 (Zhang et al. 2021).")
+# Zhang et al. 2021, Sci. Total Environ. 791:148025, Conclusions (1): "-0.15CP/year", 1979-2019.
+CROP_CONTEXT = {
+    # Jha & Pathak 2024, Commun. Earth Environ. 5:485, Methods: walnut ~700 CH (38-54 CP).
+    # No chill number in the note: the chart's target line already says what this variety needs.
+    "walnut": ("Walnuts are among the crops most exposed to warmer winters in the Central Valley "
+               "(Pathak et al. 2018)."),
+    # Jha & Pathak 2024, Methods: pistachio ~1000 CH (36-65 CP). Pathak et al. 2018, Agronomy 8:25,
+    # section 4.2: walnut and pistachio need male and female bloom in sync, regulated by chill.
+    "pistachio": ("In low-chill years, male and female pistachio trees can bloom out of sync, "
+                  "which hurts pollination (Pathak et al. 2018)."),
+    # Pathak et al. 2018, section 4.2: low-chill crops including almond unlikely to become critical
+    # by 2100. Parker et al. 2021, Sci. Total Environ. 762:143971: almond bloom frost still a risk.
+    "almond": ("Almonds have a low chill need, and research expects winter chill to stay sufficient for "
+               "them this century (Pathak et al. 2018). Frost during bloom is the bigger risk to watch "
+               "(Parker et al. 2021)."),
+    # Jha & Pathak 2024 lists plum among the high-chill crops it studied (CP figure not given).
+    # Pathak et al. 2018, section 4.2: high-chill crops lose the most Central Valley area.
+    "prune": ("Prunes are plums, one of the higher-chill crops studied (Jha & Pathak 2024). High-chill "
+              "crops lose the most suitable area in the Central Valley as winters warm (Pathak et al. 2018)."),
+}
+
 # Verdict band: where chill so far sits among past seasons on the same date (percentiles).
 VERDICT_LOW_PCT = 20     # below this: "low"
 VERDICT_HIGH_PCT = 80    # above this: "high"; between: "normal"

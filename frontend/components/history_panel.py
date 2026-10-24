@@ -23,6 +23,17 @@ def _grower_month_day(month_day: str) -> str:
     return f"{d:%b} {d.day}"
 
 
+def _skipped_caption(skipped: list[dict]):
+    """One small line saying how many winters the backend left out of the chart (it lists them in seasons_skipped).
+
+    A count only: the backend decides which winters are skipped; nothing here is calculated.
+    """
+    n = len(skipped)
+    if n:
+        st.caption(f"{n} earlier winter{'s' if n != 1 else ''} had no saved data and "
+                   f"{'are' if n != 1 else 'is'} not shown.")
+
+
 def show(place: dict, est: dict):
     """Draw the long view: bars per season, the variety's target, the backend's trend line, its sentence and a crop note."""
     h = get("/history", lat=place["lat"], lon=place["lon"], as_of=place["as_of"], max_seasons=15)
@@ -48,6 +59,7 @@ def show(place: dict, est: dict):
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown(f"**{h['trend_sentence']}**")
+    _skipped_caption(h["seasons_skipped"])
     st.caption(v["climate_caption"])
 
     crop = v["varieties"].get(est["target"]["variety"], {}).get("crop")

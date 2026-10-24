@@ -8,8 +8,9 @@ key, but it runs on a small paid budget. So:
 
 The CSV (endpoint chill-models-download) has one row per day: Date, hours_lt_45, hours_32_45,
 units_utah, portions_dynamic. Values are daily amounts, not running totals, and rows are not sorted.
-It has no count of hours with data per day (only the per-season JSON endpoint has n_hours), so a day
-with some missing hours looks like a complete day; only whole missing days can be seen.
+A day with no data is either absent or a row of empty values; both count as missing days, never as
+0 chill. The CSV has no count of hours with data per day (only the per-season JSON endpoint has
+n_hours), so a day with some missing hours looks like a complete day; only whole missing days show.
 Reference: github.com/ucdavis/fnric-reboot-the-eath-hackathon (cheat sheet and openapi.yaml).
 """
 from __future__ import annotations
@@ -54,7 +55,7 @@ def _parse(text: str) -> pd.DataFrame:
     """Daily chill rows from FNRIC's CSV text, sorted by date. Raises if it isn't real data."""
     daily = pd.read_csv(io.StringIO(text))
     missing = [c for c in ["Date", *COLUMNS] if c not in daily.columns]
-    if missing or daily.empty:
+    if missing or not daily[COLUMNS].notna().all(axis=1).any():
         raise ValueError(f"FNRIC sent no daily chill data (missing columns {missing}, {len(daily)} rows)")
     daily["Date"] = pd.to_datetime(daily["Date"])
     daily[COLUMNS] = daily[COLUMNS].astype(float)
@@ -87,9 +88,15 @@ def daily_chill(station_id: str, download: bool = False) -> pd.DataFrame:
 
 
 def season_totals(daily: pd.DataFrame, start: date, end: date) -> dict:
-    """Sum of each daily amount from start to end (both included), and how many days had a row."""
+    """Sum of each daily amount from start to end (both included), over the days with data.
+
+    days: days with a complete row. days_missing: the other days of the window (no row, or empty values).
+    """
     window = daily[(daily["Date"] >= pd.Timestamp(start)) & (daily["Date"] <= pd.Timestamp(end))]
-    return {"days": int(len(window)), **{c: float(window[c].sum()) for c in COLUMNS}}
+    complete = window[window[COLUMNS].notna().all(axis=1)]
+    days_in_window = (end - start).days + 1
+    return {"days": int(len(complete)), "days_missing": days_in_window - int(len(complete)),
+            **{c: float(complete[c].sum()) for c in COLUMNS}}
 
 
 def stations(download: bool = False) -> pd.DataFrame:

@@ -56,11 +56,16 @@ def test_cached_csv_loads_sorted_by_date_without_a_request(cache):
 
 
 def test_season_totals_sum_daily_amounts_inside_the_window_only(cache):
-    """Sept 1, 2024 to Feb 28, 2025, both ends included; Aug 31, Mar 1 and Sept 2025 are outside."""
+    """Sept 1, 2024 to Feb 28, 2025, both ends included; Aug 31, Mar 1 and Sept 2025 are outside.
+
+    FNRIC writes a day with no data as a row of empty values (Oct 1 in the fixture): it is a missing
+    day, never a day with 0 chill.
+    """
     folder, _ = cache
     shutil.copy(FIXTURES / "fnric_CIMIS-6.csv", folder / "fnric_CIMIS-6.csv")
     totals = fnric.season_totals(fnric.daily_chill("6"), date(2024, 9, 1), date(2025, 2, 28))
     assert totals["days"] == 5                                # Sept 1, Nov 1, Dec 15, Jan 10, Feb 28
+    assert totals["days_missing"] == 181 - 5                  # every other day of the window, Oct 1 included
     assert totals["hours_lt_45"] == 0 + 3 + 14 + 18 + 5
     assert totals["hours_32_45"] == 0 + 3 + 12 + 15 + 4
     assert totals["units_utah"] == pytest.approx(-8.0 + 2.0 + 6.5 + 8.0 + 3.5)
@@ -88,14 +93,18 @@ def test_download_asks_once_then_reads_the_saved_file(cache, monkeypatch):
     pd.testing.assert_frame_equal(first, second)
 
 
+GOOD_CSV = "Date,hours_lt_45,hours_32_45,units_utah,portions_dynamic\n2024-12-01,10,9,5.0,0.8\n"
+
+
 @pytest.mark.parametrize("response", [FakeResponse("Date,hours_lt_45,hours_32_45,units_utah,portions_dynamic\n"),
+                                      FakeResponse("Date,hours_lt_45,hours_32_45,units_utah,portions_dynamic\n2024-12-01,,,,\n"),
                                       FakeResponse('{"message": "Internal server error"}'),
-                                      FakeResponse("server error", 502)])
+                                      FakeResponse(GOOD_CSV, 502)])
 def test_a_bad_answer_raises_and_saves_nothing(cache, monkeypatch, response):
     """Each station is downloaded once ever, so a bad answer must never be saved as if it were the data."""
     folder, _ = cache
     monkeypatch.setattr(requests, "get", lambda *a, **k: response)
-    with pytest.raises(Exception):
+    with pytest.raises((requests.HTTPError, ValueError)):
         fnric.daily_chill("6", download=True)
     assert list(folder.iterdir()) == []
 
@@ -113,3 +122,14 @@ def test_stations_parses_coordinates_and_reads_the_cache(cache):
 def test_stations_by_default_asks_nothing_when_not_cached(cache):
     _, asked = cache
     assert fnric.stations().empty and asked == []
+
+
+def test_stations_download_saves_the_list_once(cache, monkeypatch):
+    folder, asked = cache
+    text = (FIXTURES / "fnric_stations.json").read_text()
+    monkeypatch.setattr(requests, "get", lambda url, **k: asked.append(url) or FakeResponse(text))
+    first = fnric.stations(download=True)
+    second = fnric.stations(download=True)
+    assert len(asked) == 1 and asked[0].endswith("/stations")
+    assert (folder / "fnric_stations.json").exists()
+    pd.testing.assert_frame_equal(first, second)

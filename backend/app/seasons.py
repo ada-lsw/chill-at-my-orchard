@@ -9,6 +9,11 @@ from . import config
 CHILL_END = (3, 31)
 
 
+def season_label(year: int) -> str:
+    """A season the way the app writes it, named by the year it starts: 2024 -> "2024-25"."""
+    return f"{year}-{str(year + 1)[-2:]}"
+
+
 def chill_season_start(as_of: date) -> date:
     m, d = config.CHILL_START
     start = date(as_of.year, m, d)

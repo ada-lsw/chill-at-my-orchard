@@ -58,6 +58,34 @@ cd frontend && streamlit run app.py
 
 Docker files are kept in the repo as an optional alternative (`docker compose up --build`), but the team runs without it.
 
+## Deploy as one app (Streamlit Community Cloud)
+
+The frontend can reach the backend two ways (`frontend/api.py`):
+- **Two processes**, the way you develop: set `BACKEND_URL` and the frontend calls the server over HTTP. VS Code's
+  "Backend + Frontend" launch and docker-compose already set it. In two terminals:
+  `cd backend && uvicorn app.main:app --reload`, then `cd frontend && BACKEND_URL=http://localhost:8000 streamlit run app.py`.
+- **One app**, for the public link: leave `BACKEND_URL` unset and the backend runs inside the Streamlit process (no
+  server). The answers are the same JSON. Plain `cd frontend && streamlit run app.py` also runs this way, so backend
+  edits show only after restarting Streamlit, and both requirement files must be installed.
+
+Steps on [share.streamlit.io](https://share.streamlit.io):
+0. **Before deploying, the demo's saved data must be in the repo.** `data/cache/` is git-ignored, so a fresh deploy has
+   no saved data, and both demo buttons show an error. Which files to commit (about 9 to 14 MB), or whether to download
+   on first use instead, is a team decision (see the deploy-prep PR).
+1. **Create app** from the GitHub repo `ada-lsw/chill-at-my-orchard`, branch `main`, main file `frontend/app.py`.
+2. **Advanced settings:** Python 3.12. **Secrets**, at the top level (not under a `[section]`), so Streamlit puts them
+   in the environment where `backend/app/config.py` reads them:
+   ```toml
+   DATA_SOURCE = "cimis"
+   ```
+   **No CIMIS key for now.** With a key, a pin dropped outside the saved data makes dozens of CIMIS requests in a row
+   (about 90 for one pin near Fresno), and Cloud's disk is wiped when the app sleeps, so they repeat. Without the key,
+   the demos run from the files committed in step 0, and other pins use whatever is saved. Add `CIMIS_APP_KEY` only after the
+   neighbor walk is capped (the team decides); never put the key anywhere else.
+3. Community Cloud installs the requirements file next to the main file (`frontend/requirements.txt`) **instead of**
+   the repo root's, so that file must also pull in the backend's packages with the line `-r ../backend/requirements.txt`.
+4. Make a QR code of the app's public URL for the table card.
+
 ## How it's built
 
 Who builds what: [`docs/WORK_PACKAGES.md`](docs/WORK_PACKAGES.md). Rules for every teammate's Claude: [`CLAUDE.md`](CLAUDE.md).

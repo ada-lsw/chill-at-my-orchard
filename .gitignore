@@ -6,5 +6,12 @@ __pycache__/
 venv/
 data/cache/*
 !data/cache/.gitkeep
+# Deploy (Ada, Sat 9:45am): real CIMIS and FNRIC data is committed so the public app works with no
+# downloads. Made-up (synthetic) files stay ignored.
+!data/cache/hourly_cimis_*.parquet
+!data/cache/stations.parquet
+!data/cache/elevations.json
+!data/cache/fnric_*.csv
+!data/cache/fnric_*.json
 .DS_Store
 .streamlit/secrets.toml

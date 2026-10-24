@@ -5,6 +5,7 @@ os.environ["DATA_SOURCE"] = "synthetic"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import config  # noqa: E402
 from app.main import app  # noqa: E402
 
 client = TestClient(app)
@@ -66,8 +67,11 @@ def test_estimate_has_glance_fields():
 
 
 def test_decision_pistachio():
-    r = client.get("/decision", params={"lat": 35.62, "lon": -119.69, "as_of": "2026-01-15",
-                                       "variety": "Kerman pistachio", "exclude": ["5"], "history_seasons": 4})
+    """The Kern demo pin (config.DEMO_ORCHARDS), with its hold-out hidden, mid-January."""
+    kern = config.DEMO_ORCHARDS["kern"]
+    r = client.get("/decision", params={"lat": kern["lat"], "lon": kern["lon"], "as_of": "2026-01-15",
+                                       "variety": kern["variety"], "exclude": [kern["holdout_station"]],
+                                       "history_seasons": 4})
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["status"] in ("on_track", "watch", "at_risk", "done")

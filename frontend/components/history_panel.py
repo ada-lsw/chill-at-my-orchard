@@ -58,7 +58,7 @@ def show(place: dict, est: dict):
                                  hoverinfo="skip"))
     fig.update_layout(height=320, margin=dict(l=10, r=10, t=30, b=10), showlegend=False,
                       yaxis_title=f"Chill portions by {_grower_month_day(h['season_end'])}")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})  # no tiny toolbar on phones (from Sevim's #10)
 
     st.markdown(f"**{h['trend_sentence']}**")
     _skipped_caption(h["seasons_skipped"])

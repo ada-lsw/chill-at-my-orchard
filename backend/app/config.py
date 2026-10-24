@@ -129,6 +129,10 @@ HISTORY_SEASONS = 10
 # stays on one side of zero: 95% is the usual statistics convention, approved by Ada.
 MIN_TREND_SEASONS = 5
 TREND_CONFIDENCE = 0.95
+# Default number of past winters the long view (/history) looks back, on either source; a caller's
+# max_seasons overrides it. A cap to reach FNRIC's oldest files (1982); not from a source.
+# (45 winters back from 2025-26 reaches 1980-81; winters with no saved data are listed as skipped.)
+LONG_VIEW_MAX_SEASONS = int(os.getenv("LONG_VIEW_MAX_SEASONS", 45))
 
 # Decision support. Status counts how many past seasons, added to chill so far, reach the
 # variety's target by TARGET_DATE. Draft rules from the team plan; confirm with Julia.
@@ -173,12 +177,13 @@ DEMO_ORCHARDS = {
     },
     "kern": {
         "label": "Kern pistachios near Shafter (station hidden to test the estimate)",
-        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list). The
-        # hold-out proof (/validate for station 5) hides Shafter and measures the estimate's error
-        # at exactly this spot; the demo itself shows Shafter's real data (Ada's decision, Oct 24).
+        # Pin on Shafter's own coordinates (CIMIS station 5, from the CIMIS station list). The demo
+        # hides Shafter and estimates the pin from its neighbors, as the label says, so the card shows
+        # the estimate that the hold-out proof (/validate for station 5) measures at exactly this spot
+        # (Ada, Oct 24 12:38pm; this replaces the overnight plan to show Shafter's own reading).
         "lat": 35.532556, "lon": -119.28179, "variety": "Kerman pistachio",
-        "holdout_station": "5",   # hidden only in the accuracy proof (/validate, warm_cache.py)
-        "hide_in_demo": False,    # the demo button keeps Shafter: the grower sees its own reading
+        "holdout_station": "5",   # hidden in the demo and in the accuracy proof (/validate, warm_cache.py)
+        "hide_in_demo": True,     # the demo button hides Shafter: the card is our estimate, not its reading
         "as_of": "2026-02-01",
     },
 }
@@ -219,8 +224,8 @@ MEASURE_HELP = {
     "hours_missing": (f"Hours with no reading from any nearby station, even after gaps of up to "
                       f"{MAX_FILL_HOURS} hours were filled in. Hour and unit counts skip them; "
                       f"chill portions carry the last reading forward."),
-    "neighbors": (f"Weather stations within {MAX_NEIGHBOR_KM:.0f} km of your orchard that had data "
-                  f"this winter; nearer stations count more in the estimate."),
+    "neighbors": (f"Up to {NEIGHBORS} weather stations within {MAX_NEIGHBOR_KM:.0f} km of your orchard that had "
+                  f"data this winter; nearer stations count more in the estimate."),
     "elevation": (f"Your orchard's height above sea level. Only stations within about {MAX_ELEV_DIFF_M * 3.28084:,.0f} ft ({MAX_ELEV_DIFF_M:.0f} m) "
                   f"above or below it are used."),
     "proof_actual": "Chill portions the real station measured that season. We hid it from the estimate.",

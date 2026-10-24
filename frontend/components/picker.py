@@ -38,7 +38,7 @@ def pick() -> dict | None:
         default_var = (pin or {}).get("variety") or names[0]
         variety = st.selectbox("Crop and variety", names, index=names.index(default_var) if default_var in names else 0)
         default_day = date.fromisoformat((pin or {}).get("as_of") or "2026-02-01")
-        as_of = st.date_input("As of", value=default_day,
+        as_of = st.date_input("Date to check", value=default_day,
                               help="Chill counts from Sept 1. Pick a past date to replay a season.")
 
     with st.expander("Or drop a pin on your own orchard", expanded=pin is None):
@@ -47,11 +47,21 @@ def pick() -> dict | None:
             folium.CircleMarker([s["lat"], s["lon"]], radius=4, tooltip=s["name"],
                                 color="#555" if s.get("active", True) else "#c33").add_to(m)
         clicked = st_folium(m, height=380, use_container_width=True, key="map")
+        st.caption("Gray dot: weather station still reporting. Red dot: station that closed.")
         if clicked and clicked.get("last_clicked"):
             ll = clicked["last_clicked"]
             st.session_state.pin = pin = {"lat": ll["lat"], "lon": ll["lng"], "label": "Your pin", "key": "pin"}
 
     if not pin:
         return None
-    exclude = [pin["holdout_station"]] if pin.get("holdout_station") else []
-    return {**pin, "variety": variety, "as_of": str(as_of), "exclude": exclude}
+    return {**pin, "variety": variety, "as_of": str(as_of), "exclude": hidden_stations(pin)}
+
+
+def hidden_stations(pin: dict) -> list[str]:
+    """Stations the estimate must leave out: a demo's hold-out station, unless the demo sets hide_in_demo False.
+
+    A shared link carries the hold-out (?holdout=) but no setting, so it stays hidden, as before.
+    """
+    if pin.get("holdout_station") and pin.get("hide_in_demo", True):
+        return [pin["holdout_station"]]
+    return []

@@ -1,4 +1,4 @@
-"""The only place the frontend talks to the backend. Every screen part calls get().
+"""The only place the frontend talks to the backend. Every screen part calls get() (JSON) or get_text() (files).
 
 Two ways to reach the backend:
 - BACKEND_URL set (VS Code launch, docker-compose, `BACKEND_URL=http://localhost:8000 streamlit run app.py`):
@@ -34,12 +34,8 @@ def _backend():
     return TestClient(app)    # a backend error is raised with its real traceback (shown in the app and the logs)
 
 
-@st.cache_data(show_spinner=False)
-def get(path: str, **params):
-    """GET a backend endpoint and return its JSON. Cached, so reruns don't refetch.
-
-    See http://localhost:8000/docs for every endpoint and the exact fields it returns.
-    """
+def _fetch(path: str, params: dict):
+    """GET a backend endpoint over HTTP or in this process; a 4xx is shown in plain words and stops the page."""
     params = {k: v for k, v in params.items() if v is not None}   # like requests: a None value is left out
     if API:
         r = requests.get(f"{API}{path}", params=params, timeout=300)
@@ -52,4 +48,25 @@ def get(path: str, **params):
         st.info(detail if isinstance(detail, str) else "This spot can't be shown yet.")
         st.stop()
     r.raise_for_status()
-    return r.json()
+    return r
+
+
+@st.cache_data(show_spinner=False)
+def get(path: str, **params):
+    """GET a backend endpoint and return its JSON. Cached, so reruns don't refetch.
+
+    See http://localhost:8000/docs for every endpoint and the exact fields it returns.
+    """
+    return _fetch(path, params).json()
+
+
+@st.cache_data(show_spinner=False)
+def get_text(path: str, **params) -> tuple[str, str]:
+    """GET a backend endpoint that returns a file (e.g. /daily.csv). Returns (text, file name). Cached.
+
+    The file name is the one the backend chose (its Content-Disposition header), so the frontend never makes it up.
+    """
+    r = _fetch(path, params)
+    disposition = r.headers.get("content-disposition", "")
+    name = disposition.split("filename=")[-1].strip('"') if "filename=" in disposition else "download.csv"
+    return r.text, name

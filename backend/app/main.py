@@ -7,6 +7,7 @@ Answers the grower's three questions for any point:
 And proves it works:                        -> /validate  (leave one station out)
 Plus decision support:                      -> /decision  (will chill reach the target, and when?)
 And the long view:                          -> /history   (season-end chill since the 1980s)
+And a spreadsheet of the season, day by day: -> /daily.csv (opens in Excel)
 
 Response shapes live in schemas.py (the contract with the frontend).
 """
@@ -14,13 +15,14 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from scipy import stats
 
-from . import chill, config, data, decision, forecast, interp, seasons
+from . import chill, config, data, decision, fnric, forecast, interp, seasons
 from .schemas import DecisionResponse, EstimateResponse, GlossaryResponse, HistoryResponse
 
 app = FastAPI(title="Chill at My Orchard", version="0.1.0")
@@ -74,6 +76,56 @@ def daily_curve(s: pd.Series, digits: int = 2) -> list[float]:
         return []
     cp = pd.Series(chill.chill_portions(s), index=s.index)
     return [round(float(v), digits) for v in cp.resample("D").last().ffill()]
+
+
+def season_so_far(lat, lon, elev, as_of: date, exclude) -> tuple[pd.Series, pd.DataFrame, date, date, bool]:
+    """This season's hourly estimate at the pin, from the chill start through as_of (capped at season end).
+
+    Returns (hourly estimate, neighbors used, start, end, season_complete). Shared by /estimate and
+    /daily.csv so both always count the same hours. No station data near the pin: a plain-words 404.
+    """
+    c_start, c_end, complete = seasons.chill_window(as_of)
+    est, neigh = estimate_at(lat, lon, elev, c_start, c_end, exclude)
+    if est.dropna().empty:
+        raise HTTPException(404, no_station_data_message())
+    return clip(est, c_start, c_end), neigh, c_start, c_end, complete
+
+
+# Columns of /daily.csv: (name stem, chill.py function giving the running total at every hour, decimals).
+DAILY_CSV_MEASURES = (
+    ("chill_portions", chill.chill_portions, 2),
+    ("chill_hours_32_45", chill.chill_hours, 0),
+    ("hours_at_or_below_45", chill.chill_hours_lt45, 0),
+    ("utah_units", chill.utah_units, 1),
+)
+HOURS_PER_DAY = 24
+
+
+def daily_chill_table(est: pd.Series, start: date, end: date) -> pd.DataFrame:
+    """One row per day from start to end: each measure's amount that day and its running total.
+
+    The running total is the same chill.py function /estimate uses, read at each day's last hour, so the
+    last row matches /estimate's totals. The day's amount is today's total minus yesterday's (both rounded),
+    so a column of daily amounts adds up exactly to the running total. A day with no hours in the estimate
+    (e.g. today, before the station has reported) adds nothing and keeps yesterday's total.
+    hours_missing: hours of that day the estimate has but couldn't fill (the same count /estimate adds up);
+    a day with no hours at all counts all 24 as missing.
+    """
+    days = pd.date_range(start, end, freq="D")
+    since = f"since_{start:%b}_{start.day}".lower()          # e.g. "since_sep_1": says when counting started
+    table = pd.DataFrame({"date": days.strftime("%Y-%m-%d")})
+    for stem, running_total, digits in DAILY_CSV_MEASURES:
+        by_hour = pd.Series(running_total(est), index=est.index)
+        total = by_hour.resample("D").last().reindex(days).ffill().fillna(0.0).round(digits)
+        day = total.diff().fillna(total).round(digits)
+        if digits == 0:                                     # whole hours: write 12, not 12.0
+            total, day = total.astype(int), day.astype(int)
+        table[f"{stem}_day"] = day.to_numpy()
+        table[f"{stem}_{since}"] = total.to_numpy()
+    blank_hours = est.isna().resample("D").sum().reindex(days, fill_value=0)
+    hours_in_day = est.resample("D").size().reindex(days, fill_value=0)
+    table["hours_missing"] = blank_hours.where(hours_in_day > 0, HOURS_PER_DAY).astype(int).to_numpy()
+    return table
 
 
 def estimate_at(lat, lon, elev, start, end, exclude, saved_only: bool = False) -> tuple[pd.Series, pd.DataFrame]:
@@ -213,11 +265,7 @@ def estimate(
     elev, elev_source = pin_elevation(lat, lon, exclude)
 
     # 1. So far
-    c_start, c_end, complete = seasons.chill_window(as_of)
-    est, neigh = estimate_at(lat, lon, elev, c_start, c_end, exclude)
-    if est.dropna().empty:
-        raise HTTPException(404, no_station_data_message())
-    est = clip(est, c_start, c_end)
+    est, neigh, c_start, c_end, complete = season_so_far(lat, lon, elev, as_of, exclude)
     so_far = chill.summarize(est, crop, custom_range=(range_low_f, range_high_f))
 
     g_start, g_end, g_started = seasons.gdd_window(as_of)
@@ -302,8 +350,30 @@ def estimate(
                     **decision.history_band(band_curves)},
         "projection": projection,
         "neighbors": neigh[["station_id", "name", "dist_km", "elev_m"]].round(1).to_dict("records"),
+        "station_note": decision.station_note(neigh[["dist_km"]].to_dict("records")),
         "excluded": exclude,
     }
+
+
+@app.get("/daily.csv", response_class=Response)
+def daily_csv(
+    lat: float, lon: float,
+    as_of: date = Query(default_factory=date.today),
+    variety: str | None = Query(None, description="same as /estimate; the chill numbers don't depend on it"),
+    exclude: list[str] = Query(default=[]),
+):
+    """The season's daily chill at the pin as a CSV file that opens in Excel (work package G4).
+
+    One row per day from the chill start through as_of (capped at season end, like /estimate), built
+    from the same hourly estimate as /estimate. No comment lines (Excel would show them as data), so
+    where and when are in the file name: chill_<lat>_<lon>_<as_of>.csv.
+    """
+    resolve_variety(variety, None)                      # an unknown variety gets the same 404 as /estimate
+    elev, _ = pin_elevation(lat, lon, exclude)
+    est, _, c_start, c_end, _ = season_so_far(lat, lon, elev, as_of, exclude)
+    text = daily_chill_table(est, c_start, c_end).to_csv(index=False, lineterminator="\r\n")
+    name = f"chill_{lat}_{lon}_{as_of}.csv"
+    return Response(text, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/validate")
@@ -375,7 +445,7 @@ def _season_total(lat, lon, elev, start: date, end: date, exclude) -> tuple[dict
 
     A winter still in progress is skipped: its saved file is refreshed daily, which downloads.
     """
-    if data.season_year(start) >= data.season_year(date.today()):
+    if not _season_finished(start):
         return None, "this winter is not finished yet"
     est, _ = estimate_at(lat, lon, elev, start, end, exclude, saved_only=True)
     est = clip(est, start, end)
@@ -383,6 +453,75 @@ def _season_total(lat, lon, elev, start: date, end: date, exclude) -> tuple[dict
         return None, "no saved station data near here for this winter"
     totals = chill.summarize(est)
     return {"chill_portions": round(totals["chill_portions"], 1), "hours_missing": totals["hours_missing"]}, None
+
+
+def _season_finished(start: date) -> bool:
+    """True once the season that starts on `start` is over (the long view only counts whole winters)."""
+    return data.season_year(start) < data.season_year(date.today())
+
+
+def _fnric_reader():
+    """A function station_id -> that station's FNRIC daily chill, read from the saved file once per request.
+
+    Always download=False: the long view never asks FNRIC for anything. A station with no saved file
+    gives an empty table, so it simply counts as having no data.
+    """
+    saved: dict[str, pd.DataFrame] = {}
+
+    def daily_of(station_id: str) -> pd.DataFrame:
+        """This station's saved FNRIC daily chill (empty if not saved)."""
+        if station_id not in saved:
+            saved[station_id] = fnric.daily_chill(station_id, download=False)
+        return saved[station_id]
+    return daily_of
+
+
+def fnric_coverage_fn(daily_of, start: date, end: date):
+    """Share of the window's days with an FNRIC chill record, per station, for interp.pick_neighbors.
+
+    Same rule as hourly data: a station counts for a winter if it has at least
+    config.MIN_NEIGHBOR_COVERAGE of the days; otherwise the next closest station takes its place.
+    """
+    def coverage(station_id: str) -> float:
+        """Share of days Sept 1 to Mar 31 with a complete FNRIC row (0.0 if none)."""
+        t = fnric.season_totals(daily_of(station_id), start, end)
+        return t["days"] / (t["days"] + t["days_missing"])
+    return coverage
+
+
+def _fnric_season_total(cands: pd.DataFrame, elev: float, start: date, end: date,
+                        daily_of) -> tuple[dict | None, str | None]:
+    """One past winter's chill portions at the pin from FNRIC's daily history: (row, None) or (None, why not).
+
+    Neighbors: the same candidate pool and walk as the app (interp.candidates, interp.pick_neighbors),
+    keeping the closest config.NEIGHBORS stations with FNRIC data that winter. Each day's chill is
+    blended with interp.estimate_series, so the weights are exactly the app's inverse-distance weights
+    (1 / max(km, 0.5) ** IDW_POWER); a station missing a day drops out of that day's weights. The
+    winter's total is the sum of the blended days. A day no neighbor has stays missing (days_missing),
+    never filled.
+
+    Limitation: FNRIC gives chill amounts, not temperatures, so the elevation adjustment can't apply
+    (lapse 0 here). The shipped setting has it off anyway (config.LAPSE_F_PER_M = 0). Blending daily
+    portions is also not quite the same as computing portions from blended temperatures.
+    """
+    if not _season_finished(start):
+        return None, "this winter is not finished yet"
+    neigh = interp.pick_neighbors(cands, fnric_coverage_fn(daily_of, start, end))
+    if neigh.empty:
+        return None, "no station near here has a chill record for this winter"
+    daily = {sid: fnric.daily_series(daily_of(sid), start, end) for sid in neigh["station_id"]}
+    blended = interp.estimate_series(daily, neigh, elev, lapse_f_per_m=0.0)
+    blended = blended.reindex(pd.date_range(start, end, freq="D"))
+    days_missing = int(blended.isna().sum())
+    return {"chill_portions": round(float(blended.sum()), 1), "hours_missing": 24 * days_missing,
+            "days_missing": days_missing, "stations": list(neigh["station_id"])}, None
+
+
+def _history_uses_fnric(source: str) -> bool:
+    """Whether the long view reads FNRIC's daily history ("auto": yes with real data, no with synthetic)."""
+    if source == "auto":
+        return config.DATA_SOURCE != "synthetic"   # FNRIC has no made-up stations
+    return source == "fnric"
 
 
 def trend_fit(rows: list[dict]) -> dict:
@@ -412,35 +551,67 @@ def trend_fit(rows: list[dict]) -> dict:
             "line": {"start": on_line(0), "end": on_line(-1)}}
 
 
+def _complete(row: dict) -> bool:
+    """True if a winter has no missing day after blending (days_missing 0, FNRIC path).
+
+    Only complete winters enter the trend fit: a missing day lowers a winter's total, and a run of gaps in
+    recent winters would pull the trend down. Incomplete winters are still listed, flagged complete: false.
+    The stations path reports no days_missing, so its winters count as before (missing hours are still
+    reported in hours_missing).
+    """
+    return not row.get("days_missing")
+
+
 @app.get("/history", response_model=HistoryResponse)
 def history_endpoint(lat: float, lon: float, as_of: date = Query(default_factory=date.today),
-                     max_seasons: int = 15, exclude: list[str] = Query(default=[])):
+                     max_seasons: int = Query(default=config.LONG_VIEW_MAX_SEASONS, ge=1,
+                                              description="Most past winters to look back, on either source"),
+                     exclude: list[str] = Query(default=[]),
+                     source: Literal["auto", "fnric", "stations"] = "auto"):
     """Season-end chill portions at the pin for past seasons, with a trend (Julia's long-horizon ask).
 
-    Reads only station data already saved on this machine and never downloads, so asking for
-    many winters is safe. Winters it can't count are listed in seasons_skipped with the reason.
-    v1 rebuilds each season from hourly station data; work package B3 adds FNRIC's daily chill
-    history per station to reach back further.
+    Reads only data already saved on this machine and never downloads, so asking for many winters
+    is safe. Looks back max_seasons winters (default config.LONG_VIEW_MAX_SEASONS) on either source.
+    Winters it can't count are listed in seasons_skipped with the reason. Winters with any missing
+    data are listed but left out of the trend (see _complete).
+    source:
+    - "fnric": FNRIC's daily chill history per station (back to 1982), blended like the app's estimate.
+    - "stations": rebuild each winter from saved hourly station data.
+    - "auto" (default): "fnric" with real data, "stations" with synthetic data.
+    The response's source says what was used: "fnric", or the station data's source ("cimis", "synthetic").
     """
     elev, elev_source = pin_elevation(lat, lon, exclude)
     c_start = seasons.chill_season_start(as_of)
+    use_fnric = _history_uses_fnric(source)
+    if use_fnric:
+        cands = interp.candidates(data.get_stations(), lat, lon, elev, exclude=exclude)
+        daily_of = _fnric_reader()
+
+        def season_total(s0, e0):
+            return _fnric_season_total(cands, elev, s0, e0, daily_of)
+    else:
+        def season_total(s0, e0):
+            return _season_total(lat, lon, elev, s0, e0, exclude)
     rows, skipped = [], []
     for k in range(1, max_seasons + 1):
         s0, e0 = seasons.same_window_in(k, c_start, date(c_start.year + 1, *seasons.CHILL_END))
         label = seasons.season_label(s0.year)
-        row, reason = _season_total(lat, lon, elev, s0, e0, exclude)
+        row, reason = season_total(s0, e0)
         if row:
-            rows.append({"season": label, **row})
+            rows.append({"season": label, **row, "complete": _complete(row)})
         else:
             skipped.append({"season": label, "reason": reason})
     rows.sort(key=lambda r: r["season"])
     skipped.sort(key=lambda r: r["season"])
-    trend = trend_fit(rows)
-    typical = float(np.median([r["chill_portions"] for r in rows])) if rows else None
+    in_trend = [r for r in rows if r["complete"]]
+    trend = trend_fit(in_trend)
+    typical = float(np.median([r["chill_portions"] for r in in_trend])) if in_trend else None
     return {"location": {"lat": lat, "lon": lon, "elev_m": round(elev, 1), "elev_source": elev_source},
             "season_end": f"{seasons.CHILL_END[0]:02d}-{seasons.CHILL_END[1]:02d}",
-            "seasons": rows, "trend_cp_per_decade": trend["per_decade"], "source": config.DATA_SOURCE,
+            "seasons": rows, "trend_cp_per_decade": trend["per_decade"],
+            "source": "fnric" if use_fnric else config.DATA_SOURCE,
             "trend_direction": trend["direction"], "trend_line": trend["line"],
-            "trend_sentence": decision.trend_sentence(trend["direction"], [r["season"] for r in rows],
-                                                      trend["per_decade"], typical),
-            "seasons_used": len(rows), "seasons_skipped": skipped}
+            "trend_sentence": decision.trend_sentence(trend["direction"], [r["season"] for r in in_trend],
+                                                      trend["per_decade"], typical,
+                                                      shown_labels=[r["season"] for r in rows]),
+            "seasons_used": len(rows), "seasons_in_trend": len(in_trend), "seasons_skipped": skipped}

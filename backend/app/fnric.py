@@ -8,8 +8,8 @@ key, but it runs on a small paid budget. So:
 
 The CSV (endpoint chill-models-download) has one row per day: Date, hours_lt_45, hours_32_45,
 units_utah, portions_dynamic. Values are daily amounts, not running totals, and rows are not sorted.
-A day with no data is either absent or a row of empty values; both count as missing days, never as
-0 chill. The CSV has no count of hours with data per day (only the per-season JSON endpoint has
+A day with no data is either absent, a row of empty values, or a row of exactly 0 in all four columns
+(see has_data); all three count as missing days, never as 0 chill. The CSV has no count of hours with data per day (only the per-season JSON endpoint has
 n_hours), so a day with some missing hours looks like a complete day; only whole missing days show.
 Reference: github.com/ucdavis/fnric-reboot-the-eath-hackathon (cheat sheet and openapi.yaml).
 """
@@ -87,13 +87,42 @@ def daily_chill(station_id: str, download: bool = False) -> pd.DataFrame:
     return daily
 
 
+def has_data(rows: pd.DataFrame) -> pd.Series:
+    """True for each row that is a real day of data: every value present, and not all four exactly 0.
+
+    Why all-zero rows are gaps (DECISION FOR ADA, not a tuned threshold): FNRIC's daily files have winter
+    runs of about two months where all four values are exactly 0 while CIMIS shows chill at the same
+    station (Delano 182: Nov 7 to Dec 31, 2017; Belridge 146: Jan 7 to Mar 7, 2019). A real day can hardly
+    be all zeros: Utah units go negative for warm hours (about a third of Sept-Mar days in these files have
+    negative Utah units), so 0 hours at or below 45F and also exactly 0 Utah units needs every hour to sit
+    in Utah's 0-weight bands. In the 19 saved files, days with 0 hours at or below 45F and 0 Utah units but
+    some portions happen at most 8 times per station in 40 years, while all-zero rows fall mostly in
+    Nov-Feb, when chill is surest. A rare real all-zero day may be counted as missing; that is the safe
+    side, because a missing day is reported (days_missing), never filled.
+    """
+    present = rows[COLUMNS].notna().all(axis=1)
+    all_zero = (rows[COLUMNS] == 0).all(axis=1)
+    return present & ~all_zero
+
+
+def complete_days(daily: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
+    """The rows from start to end (both included) that are real days of data (see has_data)."""
+    window = daily[(daily["Date"] >= pd.Timestamp(start)) & (daily["Date"] <= pd.Timestamp(end))]
+    return window[has_data(window)]
+
+
+def daily_series(daily: pd.DataFrame, start: date, end: date, column: str = "portions_dynamic") -> pd.Series:
+    """One daily amount from start to end, indexed by date, days with data only (missing days are absent)."""
+    rows = complete_days(daily, start, end)
+    return pd.Series(rows[column].to_numpy(), index=pd.DatetimeIndex(rows["Date"]), name=column)
+
+
 def season_totals(daily: pd.DataFrame, start: date, end: date) -> dict:
     """Sum of each daily amount from start to end (both included), over the days with data.
 
-    days: days with a complete row. days_missing: the other days of the window (no row, or empty values).
+    days: days with data. days_missing: the other days of the window (no row, empty values, or all zeros).
     """
-    window = daily[(daily["Date"] >= pd.Timestamp(start)) & (daily["Date"] <= pd.Timestamp(end))]
-    complete = window[window[COLUMNS].notna().all(axis=1)]
+    complete = complete_days(daily, start, end)
     days_in_window = (end - start).days + 1
     return {"days": int(len(complete)), "days_missing": days_in_window - int(len(complete)),
             **{c: float(complete[c].sum()) for c in COLUMNS}}

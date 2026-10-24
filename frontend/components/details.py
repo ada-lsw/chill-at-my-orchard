@@ -7,7 +7,7 @@ from datetime import date
 
 import streamlit as st
 
-from api import get
+from api import get, get_text
 
 FEET_PER_METER = 3.28084   # growers think in feet (Drew, #14)
 
@@ -32,6 +32,9 @@ def _season_label(season: str) -> str:
 def show(place: dict, est: dict, dec: dict):
     """Draw the Details layer: the measures, the grower's range, options for a PCA, and the proof."""
     _measures(est)
+    if est.get("station_note"):
+        st.info(est["station_note"])   # the backend's warning when fewer stations than usual were used
+    _download(place)
     _custom_range(est["chill"]["custom_range"])
     _pca_options(dec)
     _proof(place.get("holdout_station"), est)
@@ -68,6 +71,16 @@ def _metric_rows(items: list[tuple], per_row: int = 2):
     for i in range(0, len(items), per_row):
         for col, (label, value, tip) in zip(st.columns(per_row), items[i:i + per_row]):
             col.metric(label, value, help=tip)
+
+
+def _download(place: dict):
+    """A button that saves this season's chill, one row per day, as a CSV file that opens in Excel.
+
+    The backend builds the file and names it (/daily.csv); st.download_button hands those bytes to the browser.
+    """
+    text, file_name = get_text("/daily.csv", lat=place["lat"], lon=place["lon"], as_of=place["as_of"],
+                               variety=place["variety"], exclude=place["exclude"])
+    st.download_button("Download daily chill (CSV)", data=text, file_name=file_name, mime="text/csv")
 
 
 def _custom_range(r: dict):

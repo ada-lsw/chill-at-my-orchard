@@ -14,6 +14,20 @@ from api import get
 from components import compare, details, glance, history_panel, picker
 
 st.set_page_config(page_title="Chill at My Orchard", layout="wide")
+# Phone screens only (up to 640px wide): less empty space at the top and smaller headings, so the
+# glance card shows without scrolling (work package F2). Desktop keeps Streamlit's normal look.
+st.markdown("""<style>
+@media (max-width: 640px) {
+  [data-testid="stMainBlockContainer"], .block-container { padding-top: 2rem !important; }
+  h1 { font-size: 1.6rem !important; padding-bottom: 0.25rem !important; }
+  h3 { font-size: 1.2rem !important; }
+  .glance-box { font-size: 1rem !important; padding: 6px 12px !important; line-height: 1.35 !important; }
+  /* Narrow phones (360px): tighter gaps between blocks and slimmer demo buttons, so both glance boxes fit. */
+  [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
+  .stButton button { padding-top: 0.2rem !important; padding-bottom: 0.2rem !important; min-height: 0 !important; }
+  [data-testid="stWidgetLabel"] { min-height: 0 !important; margin-bottom: 0 !important; }
+}
+</style>""", unsafe_allow_html=True)
 st.title("Chill at My Orchard")
 st.caption("Chill for your own orchard, even where the weather station is far away or gone.")
 

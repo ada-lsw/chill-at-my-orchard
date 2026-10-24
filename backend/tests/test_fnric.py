@@ -72,6 +72,20 @@ def test_season_totals_sum_daily_amounts_inside_the_window_only(cache):
     assert totals["portions_dynamic"] == pytest.approx(0.0 + 0.4 + 1.1 + 1.4 + 0.6)
 
 
+def test_a_day_with_all_four_values_exactly_zero_is_missing_not_zero_chill():
+    """FNRIC writes some data gaps as rows of 0 in all four columns. Such a day is missing (like an empty row).
+
+    A day with some zeros but not all (Sept 1 here: 0 hours, but -8 Utah units) is a real day and counts.
+    """
+    daily = pd.DataFrame({"Date": pd.to_datetime(["2024-09-01", "2024-12-01", "2024-12-02"]),
+                          "hours_lt_45": [0.0, 0.0, 10.0], "hours_32_45": [0.0, 0.0, 9.0],
+                          "units_utah": [-8.0, 0.0, 7.5], "portions_dynamic": [0.0, 0.0, 0.9]})
+    totals = fnric.season_totals(daily, date(2024, 9, 1), date(2024, 12, 2))
+    assert totals["days"] == 2 and totals["days_missing"] == 93 - 2   # Dec 1 is missing, not 0 chill
+    series = fnric.daily_series(daily, date(2024, 9, 1), date(2024, 12, 2))
+    assert list(series.index) == list(pd.to_datetime(["2024-09-01", "2024-12-02"]))
+
+
 def test_uncached_station_by_default_is_empty_and_asks_nothing(cache):
     """The default never downloads, so a loop over stations (the long view) can't spend FNRIC's budget."""
     _, asked = cache

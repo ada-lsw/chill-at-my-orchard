@@ -28,18 +28,24 @@ METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
 
 # ---------------------------------------------------------------- helpers
 
+def hide_key(text: str) -> str:
+    """The text with the CIMIS key replaced by "***", in case an error message repeats it.
+
+    Used for every error text we log or print (here and in scripts/warm_cache.py).
+    """
+    key = config.CIMIS_APP_KEY
+    return text.replace(key, "***") if key else text
+
+
 def _warn_skipped(station_id: str, year: int, error: Exception) -> None:
     """Log that a station was left out of a season because its data couldn't load.
 
-    The CIMIS key is replaced with "***" in case an error message repeats it. No traceback is
-    logged, because it would repeat the message without the key hidden.
+    The key is hidden (hide_key). No traceback is logged, because it would repeat the message
+    without the key hidden.
     """
-    message = str(error)
-    if config.CIMIS_APP_KEY:
-        message = message.replace(config.CIMIS_APP_KEY, "***")
     logging.getLogger(__name__).warning(
         "Station %s, season %s: skipped, data could not load (%s: %s)",
-        station_id, f"{year}-{str(year + 1)[-2:]}", type(error).__name__, message)
+        station_id, f"{year}-{str(year + 1)[-2:]}", type(error).__name__, hide_key(str(error)))
 
 
 def load_hourly(station_ids, start: date, end: date) -> dict[str, pd.Series]:

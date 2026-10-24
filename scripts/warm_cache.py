@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 os.environ.setdefault("DATA_SOURCE", "cimis")
 
 from app import config, data, interp  # noqa: E402
+from app.main import hide_key  # noqa: E402
 
 
 def season_label(year: int) -> str:
@@ -55,7 +56,10 @@ def coverage_once(pause: float):
         if (station_id, year) not in seen:
             if year == this_season or not data.is_cached(station_id, year):
                 time.sleep(pause)
-            seen[(station_id, year)] = data.season_coverage(station_id, year)
+            try:
+                seen[(station_id, year)] = data.season_coverage(station_id, year)
+            except Exception as e:  # noqa: BLE001  say which station failed; warm_demo prints it
+                raise RuntimeError(f"station {station_id}: {type(e).__name__}: {e}") from e
         return seen[(station_id, year)]
     return coverage
 
@@ -96,7 +100,7 @@ def warm_demo(key: str, demo: dict, stations, coverage) -> int:
             picks = {label: walk(stations, p, hold, coverage, y) for label, p in points.items()}
         except Exception as e:  # noqa: BLE001
             failed += 1
-            print(f"  {season_label(y)}: FAILED ({e}); re-run later")
+            print(f"  {season_label(y)}: FAILED ({hide_key(str(e))}); re-run later")
             continue
         print(f"  {season_label(y)}  hold-out {hold}: {hold_share:.0%}  {describe(picks)}")
     return failed

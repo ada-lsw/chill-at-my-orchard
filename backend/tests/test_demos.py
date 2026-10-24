@@ -12,6 +12,7 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import config, data, interp, main  # noqa: E402
+from tests.test_neighbors import fake_key  # noqa: E402,F401  shared fixture: a fake CIMIS key
 
 client = TestClient(main.app)
 DEMOS = sorted(config.DEMO_ORCHARDS)
@@ -108,3 +109,19 @@ def test_warm_cache_pauses_before_a_current_season_refresh(warm_cache, monkeypat
     assert sleeps == []
     coverage("SYN-A", this_season)
     assert sleeps == [7]
+
+
+def test_warm_cache_failed_line_names_station_and_season_but_not_the_key(warm_cache, fake_key,
+                                                                         monkeypatch, capsys):
+    """A season that fails to download prints which station and season failed, with the key hidden."""
+    def refused(station_id, year):
+        raise RuntimeError(f"CIMIS refused key {fake_key}")
+
+    monkeypatch.setattr(data, "season_coverage", refused)
+    monkeypatch.setattr(interp, "pin_elevation", lambda stations, lat, lon: (110.0, "test"))  # no internet
+    demo = config.DEMO_ORCHARDS["kern"]
+    failed = warm_cache.warm_demo("kern", demo, data.get_stations(), warm_cache.coverage_once(pause=0))
+    printed = capsys.readouterr().out
+    assert failed > 0 and "FAILED" in printed
+    assert f"station {demo['holdout_station']}" in printed and "2025-26" in printed
+    assert fake_key not in printed and "***" in printed

@@ -17,6 +17,8 @@ from . import config
 
 CIMIS_BASE = "https://et.water.ca.gov/api"          # legacy API: still serves the station list
 CIMIS_DATA_URL = "https://et.water.ca.gov/StationWeb/GetDataByStationNumber"  # New CIMIS weather data
+# TODO(Saliha): if StationWeb/GetAllStations returns the same fields as /api/station
+# (StationNbr, Name, County, HmsLatitude, HmsLongitude, Elevation, IsActive), switch get_stations to it.
 CONTRACT = ["station_id", "lat", "lon", "elev_m", "datetime", "temp_F", "source", "is_filled"]
 
 

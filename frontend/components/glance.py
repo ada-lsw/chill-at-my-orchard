@@ -9,6 +9,7 @@ Both palettes were checked for protan, deutan and tritan color blindness. Color 
 only cue: every box also has an icon (▼ ● ▲, ✓ ! ✗) and the backend's word in capitals, so it
 still reads in grayscale or on a black-and-white printout.
 """
+import os
 from datetime import date
 from html import escape
 from urllib.parse import urlencode
@@ -81,11 +82,45 @@ def show(place: dict, est: dict, dec: dict):
     _share_link(place)
 
 
-def _share_link(place: dict):
-    """A link that reopens this exact orchard, for the grower to send their PCA."""
+def _app_base_url() -> str | None:
+    """The app's own web address, e.g. 'https://chill.streamlit.app/', or None if unknown.
+
+    1. APP_URL, if set (the deployed Streamlit Cloud link).
+    2. The browser's Origin header: exactly what the grower sees in the address bar.
+       st.context.headers holds the headers the browser sent when it opened the page.
+    3. The Host header (behind a proxy, X-Forwarded-Host), with https except on localhost.
+    """
+    if os.getenv("APP_URL"):
+        return os.getenv("APP_URL").rstrip("/") + "/"
+    headers = st.context.headers
+    if headers.get("Origin"):
+        return headers["Origin"].rstrip("/") + "/"
+    host = headers.get("X-Forwarded-Host") or headers.get("Host")
+    if not host:
+        return None
+    scheme = "http" if host.startswith(("localhost", "127.0.0.1")) else "https"
+    return f"{scheme}://{host}/"
+
+
+def _share_query(place: dict) -> str:
+    """'?lat=..&lon=..&variety=..&as_of=..&label=..': what picker.py reads back to reopen this orchard."""
     q = {"lat": round(place["lat"], 4), "lon": round(place["lon"], 4), "variety": place["variety"],
          "as_of": place["as_of"], "label": place["label"]}
     if place.get("holdout_station"):
         q["holdout"] = place["holdout_station"]
-    st.text_input("Share with my PCA (copy this link)", value="?" + urlencode(q),
-                  help="Add it to the end of the app's web address. Opens this orchard with these settings.")
+    return "?" + urlencode(q)
+
+
+def _share_link(place: dict):
+    """A full link that reopens this exact orchard, for the grower to text their PCA.
+
+    st.code shows the link with a copy button, so it pastes straight into a message.
+    """
+    base = _app_base_url()
+    st.markdown("**Share with my PCA:** copy this link and send it in a text or email. "
+                "It opens this orchard, variety and date.")
+    if base:
+        st.code(base + _share_query(place), language=None, wrap_lines=True)
+    else:
+        st.code(_share_query(place), language=None, wrap_lines=True)
+        st.caption("Add this to the end of the app's web address.")

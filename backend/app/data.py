@@ -130,6 +130,15 @@ def season_coverage(station_id: str, year: int) -> float:
     return share
 
 
+def hide_key(text: str) -> str:
+    """The text with the CIMIS key replaced by "***", in case an error message repeats it.
+
+    Used for every error text we log or print (main.py's warnings, scripts/warm_cache.py).
+    """
+    key = config.CIMIS_APP_KEY
+    return text.replace(key, "***") if key else text
+
+
 class CimisVolumeError(Exception):
     """CIMIS refused the request as too large (ERR2112 DATA VOLUME VIOLATION)."""
 

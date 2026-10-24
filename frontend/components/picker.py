@@ -43,11 +43,17 @@ def pick() -> dict | None:
 
     with st.expander("Or drop a pin on your own orchard", expanded=pin is None):
         m = folium.Map(location=[37.6, -120.6], zoom_start=6)
+        # Only stations with saved data are drawn (the backend's has_data), all in one blue (easy to see for
+        # color-blind growers). Stations without data are never drawn or mentioned. If an older backend
+        # has no has_data field, fall back to stations still reporting (active).
         for s in get("/stations"):
-            folium.CircleMarker([s["lat"], s["lon"]], radius=4, tooltip=s["name"],
-                                color="#555" if s.get("active", True) else "#c33").add_to(m)
+            if not s.get("has_data", s.get("active", True)):
+                continue
+            folium.CircleMarker([s["lat"], s["lon"]], radius=5, tooltip=s["name"], color="#1f5fa8",
+                                fill=True, fill_color="#1f5fa8", fill_opacity=0.8).add_to(m)
         clicked = st_folium(m, height=380, use_container_width=True, key="map")
-        st.caption("Gray dot: weather station still reporting. Red dot: station that closed.")
+        st.caption("Map key: :blue[●] blue dot = weather station. "
+                   "Click anywhere on the map near your orchard to estimate its chill.")
         if clicked and clicked.get("last_clicked"):
             ll = clicked["last_clicked"]
             st.session_state.pin = pin = {"lat": ll["lat"], "lon": ll["lng"], "label": "Your pin", "key": "pin"}

@@ -12,6 +12,13 @@ from app.main import app  # noqa: E402
 client = TestClient(app)
 
 
+def test_stations_say_which_have_data():
+    """The map draws only stations with has_data; on synthetic data every station has data."""
+    rows = client.get("/stations").json()
+    assert rows and all(isinstance(r["has_data"], bool) for r in rows)
+    assert all(r["has_data"] for r in rows)   # this test module runs on DATA_SOURCE=synthetic
+
+
 def test_health():
     assert client.get("/health").json()["ok"] is True
 

@@ -31,6 +31,20 @@ st.markdown("""<style>
 st.title("Chill at My Orchard")
 st.caption("Chill for your own orchard, even where the weather station is far away or gone.")
 
+# Labels for the parts of the page, named for who each part is for. The guide below uses the same words.
+LONG_TAB = "Long-term view (for planning)"
+NUMBERS_BOX = "For your PCA or consultant: every number, how sure we are, options"
+SHARE_BOX = "Share my data"   # kept as is: tests/test_one_app.py looks for this exact label
+# "Find what you need": one short line per group, so each knows where to look (fits a phone screen).
+st.markdown(
+    "**Find what you need**\n"
+    "- **Growers:** will my trees bloom on time, and do I need to act? See the box at the top.\n"
+    "- **No station nearby:** the chill is estimated for your own orchard. "
+    f"How close it usually is: \"{NUMBERS_BOX}\".\n"
+    f"- **PCAs and consultants:** the numbers behind the answer are in \"{NUMBERS_BOX}\"; "
+    f"growers can send them with \"{SHARE_BOX}\".\n"
+    f"- **FNRIC and planners:** chill trends for picking varieties are in \"{LONG_TAB}\".")
+
 place = picker.pick()
 if not place:
     st.info("Pick a demo orchard or drop a pin to start.")
@@ -47,16 +61,16 @@ if est["data_source"] == "synthetic":
 
 glance.show(place, est, dec)
 
-tab_compare, tab_long = st.tabs(["Compare with past years", "Long-term view"])
+tab_compare, tab_long = st.tabs(["Compare with past years", LONG_TAB])
 with tab_compare:
     compare.show(est)
 with tab_long:
     history_panel.show(place, est)
 
-with st.expander("Show the numbers"):
+with st.expander(NUMBERS_BOX):
     details.show(place, est, dec)
 
-with st.expander("Share my data"):
+with st.expander(SHARE_BOX):
     glance.share_link(place)   # a link that reopens this orchard, for a PCA, consultant or anyone else
 
 st.caption("Data: CIMIS (California DWR), FNRIC chill models (UC Davis), Open-Meteo. "

@@ -241,7 +241,17 @@ def health():
 
 @app.get("/stations")
 def stations():
-    return data.get_stations().to_dict("records")
+    """Every station, plus has_data: True if any season of it is saved in data/cache (always True on synthetic).
+
+    The map shows only stations with has_data, so a grower never clicks near a station we can't use.
+    """
+    df = data.get_stations()
+    if config.DATA_SOURCE == "synthetic":
+        df["has_data"] = True
+    else:
+        saved = {p.name.split("_")[2] for p in config.CACHE_DIR.glob(f"hourly_{config.DATA_SOURCE}_*_*.parquet")}
+        df["has_data"] = df["station_id"].astype(str).isin(saved)
+    return df.to_dict("records")
 
 
 @app.get("/demo")

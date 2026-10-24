@@ -58,6 +58,29 @@ cd frontend && streamlit run app.py
 
 Docker files are kept in the repo as an optional alternative (`docker compose up --build`), but the team runs without it.
 
+## Deploy as one app (Streamlit Community Cloud)
+
+The frontend can reach the backend two ways (`frontend/api.py`):
+- **Two processes**, the way you develop: set `BACKEND_URL` and the frontend calls the server over HTTP. VS Code's
+  "Backend + Frontend" launch and docker-compose already set it. In two terminals:
+  `cd backend && uvicorn app.main:app --reload`, then `cd frontend && BACKEND_URL=http://localhost:8000 streamlit run app.py`.
+- **One app**, for the public link: leave `BACKEND_URL` unset and the backend runs inside the Streamlit process (no
+  server). The answers are the same JSON. Plain `cd frontend && streamlit run app.py` also runs this way, so backend
+  edits show only after restarting Streamlit, and both requirement files must be installed.
+
+Steps on [share.streamlit.io](https://share.streamlit.io):
+1. **Create app** from the GitHub repo `ada-lsw/chill-at-my-orchard`, branch `main`, main file `frontend/app.py`.
+2. **Advanced settings:** Python 3.12. **Secrets**, at the top level (not under a `[section]`), so Streamlit puts them
+   in the environment where `backend/app/config.py` reads them:
+   ```toml
+   DATA_SOURCE = "cimis"
+   CIMIS_APP_KEY = "your-key"
+   ```
+   Never put the key anywhere else; secrets stay out of the repo.
+3. Community Cloud installs the requirements file next to the main file (`frontend/requirements.txt`) before the
+   repo root's, so that file must also pull in the backend's packages.
+4. Make a QR code of the app's public URL for the table card.
+
 ## How it's built
 
 Who builds what: [`docs/WORK_PACKAGES.md`](docs/WORK_PACKAGES.md). Rules for every teammate's Claude: [`CLAUDE.md`](CLAUDE.md).

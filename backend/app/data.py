@@ -30,13 +30,24 @@ def _parse_decimal(hms: str) -> float:
     return float(m.group(1)) if m else float("nan")
 
 
+_STATIONS: dict = {}   # path -> ((mtime_ns, size), table): the station list, read once per process
+
+
 def get_stations() -> pd.DataFrame:
-    """Columns: station_id, name, county, lat, lon, elev_m, active."""
+    """Columns: station_id, name, county, lat, lon, elev_m, active.
+
+    The saved list is read once per process and again only if the file changes (time or size); each
+    caller gets its own copy.
+    """
     if config.DATA_SOURCE == "synthetic":
         return _synthetic_stations()
     cache = config.CACHE_DIR / "stations.parquet"
     if cache.exists():
-        return pd.read_parquet(cache)
+        info = cache.stat()
+        stamp = (info.st_mtime_ns, info.st_size)
+        if cache not in _STATIONS or _STATIONS[cache][0] != stamp:
+            _STATIONS[cache] = (stamp, pd.read_parquet(cache))
+        return _STATIONS[cache][1].copy()
     r = requests.get(f"{CIMIS_BASE}/station", headers={"Accept": "application/json"}, timeout=30)
     r.raise_for_status()
     rows = []
@@ -98,6 +109,45 @@ def season_hourly(station_id: str, year: int) -> pd.DataFrame:
     df = fill_gaps(df)
     df.to_parquet(cache)
     return df
+
+
+def is_cached(station_id: str, year: int) -> bool:
+    """True if this station's season is already in data/cache/ (no download needed)."""
+    return (config.CACHE_DIR / f"hourly_{config.DATA_SOURCE}_{station_id}_{year}.parquet").exists()
+
+
+_COVERAGE: dict[tuple[str, str, int], float] = {}  # finished seasons never change, so remember them
+
+
+def season_coverage(station_id: str, year: int) -> float:
+    """Share of a season's hours (Sept 1 to Aug 31, or to yesterday) that have a temperature.
+
+    0.0 for a station that was closed, or not yet open, that season. Reads the season's cache
+    file, downloading it once if it isn't cached; an empty season is cached too, so a closed
+    station is never asked for the same season twice. A failed download raises.
+    """
+    key = (config.DATA_SOURCE, station_id, year)
+    if key in _COVERAGE:
+        return _COVERAGE[key]
+    s_start = date(year, 9, 1)
+    s_end = min(date(year + 1, 8, 31), date.today() - timedelta(days=1))
+    if s_end < s_start:
+        return 0.0
+    df = season_hourly(station_id, year)
+    hours = ((s_end - s_start).days + 1) * 24
+    share = float(df["temp_F"].notna().sum()) / hours if not df.empty else 0.0
+    if s_end == date(year + 1, 8, 31):
+        _COVERAGE[key] = share
+    return share
+
+
+def hide_key(text: str) -> str:
+    """The text with the CIMIS key replaced by "***", in case an error message repeats it.
+
+    Used for every error text we log or print (main.py's warnings, scripts/warm_cache.py).
+    """
+    key = config.CIMIS_APP_KEY
+    return text.replace(key, "***") if key else text
 
 
 class CimisVolumeError(Exception):
@@ -216,7 +266,7 @@ def synthetic_temp(lat, lon, elev_m, index: pd.DatetimeIndex, seed: int = 0) -> 
     days = (index - pd.Timestamp("2000-01-01")).days.to_numpy()  # same weather at every station
     shared = 5 * np.sin(days / 4.3) + 3 * np.sin(days / 9.7)      # regional weather systems
     local = np.random.default_rng(seed).normal(0, 1.2, len(index))
-    return seasonal + daily + shared + local - 1.2 * (lat - 38.5) - config.LAPSE_F_PER_M * elev_m
+    return seasonal + daily + shared + local - 1.2 * (lat - 38.5) - config.SYNTHETIC_LAPSE_F_PER_M * elev_m
 
 
 def _synthetic_hourly(station_id: str, start: date, end: date) -> pd.DataFrame:

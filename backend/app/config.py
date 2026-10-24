@@ -50,7 +50,8 @@ LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0117))
 # closest first and keeps the first NEIGHBORS stations that have data that season;
 # scripts/warm_cache.py does the same walk, so the demo uses exactly the stations it cached.
 # Closed stations are included: their old data helps estimate past winters. Many stations near
-# the demo orchards are closed (8 of the 10 closest to the Kern pin), so the list is long.
+# the demo orchards are listed as closed (8 of the 10 nearest to the Kern pin at Shafter, 7 of
+# them with no data since 2016), so the list is long.
 NEIGHBOR_CANDIDATES = int(os.getenv("NEIGHBOR_CANDIDATES", 30))  # most stations walked
 # STARTING VALUES, not from a source. scripts/validation_table.py should try others; ship the best.
 MAX_NEIGHBOR_KM = float(os.getenv("MAX_NEIGHBOR_KM", 100))

@@ -46,6 +46,17 @@ IDW_POWER = float(os.getenv("IDW_POWER", 2.0))
 # Winter valley inversions can make this wrong; validation decides the value we ship.
 LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0117))
 
+# Which stations may be neighbors (interp.candidates). The app and scripts/warm_cache.py use
+# the same pool, so the demo only uses stations that were cached. Closed stations are included:
+# their old data helps estimate past winters.
+NEIGHBOR_CANDIDATES = int(os.getenv("NEIGHBOR_CANDIDATES", 10))  # closest stations considered
+# STARTING VALUES, not from a source. scripts/validation_table.py should try others; ship the best.
+MAX_NEIGHBOR_KM = float(os.getenv("MAX_NEIGHBOR_KM", 100))
+MAX_ELEV_DIFF_M = float(os.getenv("MAX_ELEV_DIFF_M", 300))   # about 1,000 ft above or below the pin
+# A candidate counts for a window only if it has a temperature for at least this share of the
+# window's hours; otherwise the next closest station takes its place. Also a starting value.
+MIN_NEIGHBOR_COVERAGE = float(os.getenv("MIN_NEIGHBOR_COVERAGE", 0.5))
+
 # Gaps up to this many hours are filled by linear interpolation; longer gaps stay missing.
 MAX_FILL_HOURS = 3
 

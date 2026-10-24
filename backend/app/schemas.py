@@ -160,3 +160,10 @@ class HistoryResponse(Open):
         description="Fitted line at the first and last season; null if too few winters")
     seasons_used: int
     seasons_skipped: list[SkippedSeason] = Field(description="Winters not counted (nothing saved, or not finished)")
+
+
+# ---------------------------------------------------------------- /glossary
+
+class GlossaryResponse(Open):
+    measures: dict[str, str] = Field(
+        description="One plain line explaining each number the Details layer shows (config.MEASURE_HELP)")

@@ -7,6 +7,7 @@ Answers the grower's three questions for any point:
 And proves it works:                        -> /validate  (leave one station out)
 Plus decision support:                      -> /decision  (will chill reach the target, and when?)
 And the long view:                          -> /history   (season-end chill since the 1980s)
+And a spreadsheet of the season, day by day: -> /daily.csv (opens in Excel)
 
 Response shapes live in schemas.py (the contract with the frontend).
 """
@@ -17,7 +18,7 @@ from datetime import date, datetime, timedelta
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from scipy import stats
 
 from . import chill, config, data, decision, forecast, interp, seasons
@@ -74,6 +75,56 @@ def daily_curve(s: pd.Series, digits: int = 2) -> list[float]:
         return []
     cp = pd.Series(chill.chill_portions(s), index=s.index)
     return [round(float(v), digits) for v in cp.resample("D").last().ffill()]
+
+
+def season_so_far(lat, lon, elev, as_of: date, exclude) -> tuple[pd.Series, pd.DataFrame, date, date, bool]:
+    """This season's hourly estimate at the pin, from the chill start through as_of (capped at season end).
+
+    Returns (hourly estimate, neighbors used, start, end, season_complete). Shared by /estimate and
+    /daily.csv so both always count the same hours. No station data near the pin: a plain-words 404.
+    """
+    c_start, c_end, complete = seasons.chill_window(as_of)
+    est, neigh = estimate_at(lat, lon, elev, c_start, c_end, exclude)
+    if est.dropna().empty:
+        raise HTTPException(404, no_station_data_message())
+    return clip(est, c_start, c_end), neigh, c_start, c_end, complete
+
+
+# Columns of /daily.csv: (name stem, chill.py function giving the running total at every hour, decimals).
+DAILY_CSV_MEASURES = (
+    ("chill_portions", chill.chill_portions, 2),
+    ("chill_hours_32_45", chill.chill_hours, 0),
+    ("hours_at_or_below_45", chill.chill_hours_lt45, 0),
+    ("utah_units", chill.utah_units, 1),
+)
+HOURS_PER_DAY = 24
+
+
+def daily_chill_table(est: pd.Series, start: date, end: date) -> pd.DataFrame:
+    """One row per day from start to end: each measure's amount that day and its running total.
+
+    The running total is the same chill.py function /estimate uses, read at each day's last hour, so the
+    last row matches /estimate's totals. The day's amount is today's total minus yesterday's (both rounded),
+    so a column of daily amounts adds up exactly to the running total. A day with no hours in the estimate
+    (e.g. today, before the station has reported) adds nothing and keeps yesterday's total.
+    hours_missing: hours of that day the estimate has but couldn't fill (the same count /estimate adds up);
+    a day with no hours at all counts all 24 as missing.
+    """
+    days = pd.date_range(start, end, freq="D")
+    since = f"since_{start:%b}_{start.day}".lower()          # e.g. "since_sep_1": says when counting started
+    table = pd.DataFrame({"date": days.strftime("%Y-%m-%d")})
+    for stem, running_total, digits in DAILY_CSV_MEASURES:
+        by_hour = pd.Series(running_total(est), index=est.index)
+        total = by_hour.resample("D").last().reindex(days).ffill().fillna(0.0).round(digits)
+        day = total.diff().fillna(total).round(digits)
+        if digits == 0:                                     # whole hours: write 12, not 12.0
+            total, day = total.astype(int), day.astype(int)
+        table[f"{stem}_day"] = day.to_numpy()
+        table[f"{stem}_{since}"] = total.to_numpy()
+    blank_hours = est.isna().resample("D").sum().reindex(days, fill_value=0)
+    hours_in_day = est.resample("D").size().reindex(days, fill_value=0)
+    table["hours_missing"] = blank_hours.where(hours_in_day > 0, HOURS_PER_DAY).astype(int).to_numpy()
+    return table
 
 
 def estimate_at(lat, lon, elev, start, end, exclude, saved_only: bool = False) -> tuple[pd.Series, pd.DataFrame]:
@@ -213,11 +264,7 @@ def estimate(
     elev, elev_source = pin_elevation(lat, lon, exclude)
 
     # 1. So far
-    c_start, c_end, complete = seasons.chill_window(as_of)
-    est, neigh = estimate_at(lat, lon, elev, c_start, c_end, exclude)
-    if est.dropna().empty:
-        raise HTTPException(404, no_station_data_message())
-    est = clip(est, c_start, c_end)
+    est, neigh, c_start, c_end, complete = season_so_far(lat, lon, elev, as_of, exclude)
     so_far = chill.summarize(est, crop, custom_range=(range_low_f, range_high_f))
 
     g_start, g_end, g_started = seasons.gdd_window(as_of)
@@ -304,6 +351,27 @@ def estimate(
         "neighbors": neigh[["station_id", "name", "dist_km", "elev_m"]].round(1).to_dict("records"),
         "excluded": exclude,
     }
+
+
+@app.get("/daily.csv", response_class=Response)
+def daily_csv(
+    lat: float, lon: float,
+    as_of: date = Query(default_factory=date.today),
+    variety: str | None = Query(None, description="same as /estimate; the chill numbers don't depend on it"),
+    exclude: list[str] = Query(default=[]),
+):
+    """The season's daily chill at the pin as a CSV file that opens in Excel (work package G4).
+
+    One row per day from the chill start through as_of (capped at season end, like /estimate), built
+    from the same hourly estimate as /estimate. No comment lines (Excel would show them as data), so
+    where and when are in the file name: chill_<lat>_<lon>_<as_of>.csv.
+    """
+    resolve_variety(variety, None)                      # an unknown variety gets the same 404 as /estimate
+    elev, _ = pin_elevation(lat, lon, exclude)
+    est, _, c_start, c_end, _ = season_so_far(lat, lon, elev, as_of, exclude)
+    text = daily_chill_table(est, c_start, c_end).to_csv(index=False, lineterminator="\r\n")
+    name = f"chill_{lat}_{lon}_{as_of}.csv"
+    return Response(text, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 @app.get("/validate")

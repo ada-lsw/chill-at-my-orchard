@@ -26,10 +26,11 @@ VERDICT_STYLE = {
 }
 
 # Decision status (dec["status"]): will the variety's target likely be reached in time?
+# Every edge/icon color clears 3:1 contrast against its fill (amber was #c99500 at 2.40:1).
 STATUS_STYLE = {
     "on_track": {"edge": "#1f66c1", "fill": "#e4eefb", "icon": "✓"},
     "done":     {"edge": "#1f66c1", "fill": "#e4eefb", "icon": "✓"},
-    "watch":    {"edge": "#c99500", "fill": "#fbf1d6", "icon": "!"},
+    "watch":    {"edge": "#9a7100", "fill": "#fbf1d6", "icon": "!"},
     "at_risk":  {"edge": "#9e2a1b", "fill": "#f8e4e0", "icon": "✗"},
     "unknown":  {"edge": "#57564f", "fill": "#f0efec", "icon": "?"},
 }
@@ -68,11 +69,11 @@ def show(place: dict, est: dict, dec: dict):
          dec["status_words"], dec["line"])
     c1, c2, c3 = st.columns(3)
     c1.metric("Chill so far", f"{t['progress_pct']:.0f}% of target",
-              help=f"{est['chill']['chill_portions']:.0f} of {t['target_cp']:.0f} chill portions, counted since {est['chill']['start']}")
+              help=f"{est['chill']['chill_portions']:.0f} of {t['target_cp']:.0f} chill portions, counted since {_grower_date(est['chill']['start'])}")
     if dec.get("reached_in"):
         r = dec["reached_in"]
         c2.metric("Past years that reached the target", f"{r['seasons']} of {r['of']}",
-                  help=f"By {dec['target_date']}, adding each past season's weather to this season so far")
+                  help=f"By {_grower_date(dec['target_date'])}, adding each past season's weather to this season so far")
     w = dec.get("decision_window")
     if w and w.get("likely_between"):
         c3.metric(f"Reaches {w['milestone_cp']:.0f} chill portions", " to ".join(_grower_date(d) for d in w["likely_between"]),

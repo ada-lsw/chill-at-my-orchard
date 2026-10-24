@@ -84,7 +84,8 @@ APPTEST = textwrap.dedent("""
     for word in ("Durham", "Kern"):
         at = AppTest.from_file("app.py", default_timeout=300).run()
         next(b for b in at.button if word in str(b.label)).click().run()
-        texts = [m.value for m in list(at.success) + list(at.warning) + list(at.info) + list(at.error)]
+        # Markdown too: the glance card may be drawn as its own HTML box with st.markdown (PR #9).
+        texts = [m.value for kind in (at.markdown, at.success, at.warning, at.info, at.error) for m in kind]
         assert not at.exception, [e.value for e in at.exception]
         # A red box is fine when it is the glance card itself (an "AT RISK" or "LOW CHILL" verdict starts with its bold
         # word); any other red box is an error message, which must not appear.

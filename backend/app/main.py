@@ -12,6 +12,7 @@ Response shapes live in schemas.py (the contract with the frontend).
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -27,13 +28,33 @@ METRICS = ("chill_portions", "chill_hours", "hours_lt_45", "utah_units")
 
 # ---------------------------------------------------------------- helpers
 
+def _warn_skipped(station_id: str, year: int, error: Exception) -> None:
+    """Log that a station was left out of a season because its data couldn't load.
+
+    The CIMIS key is replaced with "***" in case an error message repeats it. No traceback is
+    logged, because it would repeat the message without the key hidden.
+    """
+    message = str(error)
+    if config.CIMIS_APP_KEY:
+        message = message.replace(config.CIMIS_APP_KEY, "***")
+    logging.getLogger(__name__).warning(
+        "Station %s, season %s: skipped, data could not load (%s: %s)",
+        station_id, f"{year}-{str(year + 1)[-2:]}", type(error).__name__, message)
+
+
 def load_hourly(station_ids, start: date, end: date) -> dict[str, pd.Series]:
+    """Hourly °F series from start to end for each station that loads.
+
+    A station that fails to load (offline and not cached, CIMIS down) is logged and left out,
+    so the estimate uses the others.
+    """
     out = {}
     for sid in station_ids:
         try:
             df = data.get_hourly(sid, start, end)
-        except Exception:
-            continue  # station offline for this window: the estimate just uses the others
+        except Exception as e:  # noqa: BLE001
+            _warn_skipped(sid, data.season_year(start), e)
+            continue
         if not df.empty:
             out[sid] = df.set_index("datetime")["temp_F"]
     return out
@@ -72,16 +93,19 @@ def season_coverage_fn(year: int):
       Most closed stations near our pins have no data since 2016, and warm_cache.py has
       already cached the ones the demo orchards need.
     - A station whose data can't be loaded (offline and not cached) counts as having none,
-      so the app keeps working with Wi-Fi off.
+      so the app keeps working with Wi-Fi off. A warning is logged, so online and offline
+      numbers never differ without a trace.
     """
     active = data.get_stations().set_index("station_id")["active"]
 
     def coverage(station_id: str) -> float:
+        """Share of the season's hours with a temperature; 0.0 if closed and uncached, or unloadable."""
         if not bool(active.get(station_id, False)) and not data.is_cached(station_id, year):
             return 0.0
         try:
             return data.season_coverage(station_id, year)
-        except Exception:
+        except Exception as e:  # noqa: BLE001
+            _warn_skipped(station_id, year, e)
             return 0.0
     return coverage
 

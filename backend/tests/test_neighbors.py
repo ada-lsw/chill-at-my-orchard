@@ -1,11 +1,16 @@
 """Neighbor rules: one shared station pool, and only stations with data that season count."""
+import logging
 import os
+from datetime import date
 
 os.environ["DATA_SOURCE"] = "synthetic"
 
 import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
 
-from app import config, interp  # noqa: E402
+from app import config, data, interp, main  # noqa: E402
+
+FAKE_KEY = "FAKE-KEY-0123456789abcdef0123456"
 
 
 def stations():
@@ -46,6 +51,7 @@ def test_station_without_data_is_replaced_by_next_closest():
 
 
 def test_station_with_too_little_data_is_skipped(monkeypatch):
+    """A station with data for under MIN_NEIGHBOR_COVERAGE of the season doesn't count."""
     monkeypatch.setattr(config, "MIN_NEIGHBOR_COVERAGE", 0.5)
     cands = interp.candidates(stations(), 38.0, -121.0, 50.0)
     share = {"A": 0.2, "B": 1.0, "C": 1.0}
@@ -68,7 +74,7 @@ def test_walk_stops_once_enough_stations_are_found():
 
 
 def test_season_coverage_on_synthetic_data():
-    from app import data
+    """Synthetic seasons are almost full; a season that hasn't started has no data."""
     assert data.season_coverage("SYN-A", 2024) > 0.9      # ~1% of synthetic hours are missing
     assert data.season_coverage("SYN-A", 2099) == 0.0     # a season that hasn't started
 
@@ -101,12 +107,48 @@ def test_pin_elevation_is_saved_for_offline_use(tmp_path, monkeypatch):
 
 
 def test_app_never_downloads_an_uncached_closed_station(monkeypatch):
-    """A closed station counts as 'no data' unless it is already cached: no CIMIS request."""
-    from app import data, main
+    """A closed station counts as 'no data' unless it is already cached: no CIMIS request.
+
+    Records calls instead of raising: season_coverage_fn catches errors, so a raise here would
+    be swallowed and the test could never fail.
+    """
     monkeypatch.setattr(data, "is_cached", lambda sid, year: False)
-
-    def must_not_download(*args, **kwargs):
-        raise AssertionError("tried to download a closed station")
-
-    monkeypatch.setattr(data, "season_coverage", must_not_download)
+    asked = []
+    monkeypatch.setattr(data, "season_coverage", lambda sid, year: asked.append(sid) or 1.0)
     assert main.season_coverage_fn(2024)("12") == 0.0    # Durham (12) is closed
+    assert asked == []                                   # no download was attempted
+
+
+@pytest.fixture
+def fake_key(monkeypatch, caplog):
+    """Pretend a CIMIS key is set and capture app.main's warnings, so a test can check the key isn't logged."""
+    monkeypatch.setattr(config, "CIMIS_APP_KEY", FAKE_KEY)
+    caplog.set_level(logging.WARNING, logger="app.main")
+    return FAKE_KEY
+
+
+def test_station_that_cannot_load_is_logged_without_the_key(fake_key, monkeypatch, caplog):
+    """A station whose season can't load still counts as 'no data', but leaves a warning, never the key."""
+    def refused(station_id, year):
+        raise RuntimeError(f"CIMIS refused key {fake_key}")
+
+    monkeypatch.setattr(data, "season_coverage", refused)
+    assert main.season_coverage_fn(2024)("SYN-A") == 0.0   # SYN-A is active, so it reaches the download
+    assert "SYN-A" in caplog.text and "2024-25" in caplog.text and "RuntimeError" in caplog.text
+    assert fake_key not in caplog.text
+
+
+def test_load_hourly_warns_about_a_failed_station_and_keeps_the_rest(fake_key, monkeypatch, caplog):
+    """One station failing to load is logged (without the key); the other stations are still returned."""
+    hours = pd.date_range("2024-11-01", periods=3, freq="h")
+
+    def get_hourly(station_id, start, end):
+        if station_id == "SYN-B":
+            raise RuntimeError(f"CIMIS refused key {fake_key}")
+        return pd.DataFrame({"datetime": hours, "temp_F": [40.0, 41.0, 42.0]})
+
+    monkeypatch.setattr(data, "get_hourly", get_hourly)
+    loaded = main.load_hourly(["SYN-A", "SYN-B", "SYN-C"], date(2024, 11, 1), date(2024, 11, 30))
+    assert sorted(loaded) == ["SYN-A", "SYN-C"]
+    assert "SYN-B" in caplog.text and "2024-25" in caplog.text and "RuntimeError" in caplog.text
+    assert fake_key not in caplog.text

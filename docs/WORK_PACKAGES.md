@@ -15,7 +15,7 @@ Deadlines: code freeze **Saturday 2:00pm**, submit by **2:45pm**. No new feature
 | Backend A: real data, proof, hourly-from-daily | Ada | `backend/app/data.py`, `interp.py`, `decision.py`, `main.py`, `scripts/` | Real data cached for both demos |
 | Backend B: FNRIC data, golden tests, long view | (name) | `backend/app/fnric.py` (new), `backend/tests/test_golden.py` (new), `/history` in `main.py` | FNRIC client that caches one station |
 | Frontend A: picker and glance card | (name) | `frontend/app.py`, `frontend/components/picker.py`, `glance.py` | Glance card readable on a phone |
-| Frontend B: compare, long view, details | (name) | `frontend/components/compare.py`, `history_panel.py`, `details.py` | Normal-range band on the chart |
+| Frontend B: compare, long view, details | Drew | `frontend/components/compare.py`, `history_panel.py`, `details.py` | "Is chill declining here?" long view (from PR #3) |
 | Pitch and mentors (optional 5th person) | (name) | `pitch/` | Mentor answers in the Build details tab |
 
 Shared files (`config.py`, `schemas.py`, `api.py`, `CLAUDE.md`): change only through a PR that says so in its
@@ -66,7 +66,7 @@ https://github.com/ucdavis/fnric-reboot-the-eath-hackathon (Base URL and endpoin
 | B2 | `backend/tests/test_golden.py`: for Davis (6) and Firebaugh (7), compare our season-to-date totals from cached CIMIS hourly data with FNRIC's for the same dates (season starts Sept 1). Skip the test when no cache exists, so CI stays green. Report the difference. | "Our chill matches FNRIC within X" is a sentence we can say to judges |
 | B3 | Make `/history` fast: season-end chill portions at each nearest station from FNRIC daily data, blended by distance (same weights as `interp.py`), back to the 1980s. Keep the response shape in `schemas.HistoryResponse`. | Long view loads in under 5 seconds |
 | B4 | Fold in the climate-data PR: new sources must produce the data contract table, with their own `source` value, and document where they came from in `README.md` credits. | Merged with tests |
-| B5 | Stretch: navel orangeworm degree-days for almonds (UC IPM, 55°F lower and 94°F upper threshold) as a separate GDD count in `chill.py`. | One test, one field in `/estimate` |
+| B5 | Stretch: bloom frost hours (Julia's brief: whether frost protection may be needed for newly opening buds). `chill.frost_hours(series, threshold_f)` counts hours at or below a threshold, skipping missing hours. Thresholds in `config.py`: `FROST_CRITICAL_F = {"almond": 27.1}` (Parker et al. 2021, verify against the paper) and `FROST_GENERAL_F = 32.0` for other crops. `/estimate` gains `frost: {threshold_f, source, hours_since_bloom, forecast_hours}` from the bloom-window series and the 14-day forecast. Proposed by Drew in PR #3. Only after A4 and B2. | One test in `test_chill.py`; `frost` block in `/estimate` |
 
 ## Frontend A: picker and glance card
 
@@ -90,7 +90,8 @@ Goal: the one-tap layers a PCA or a curious grower opens, and the proof judges a
 | # | Task | Done when |
 |---|---|---|
 | G1 | Compare chart (`compare.py`): shade the normal range (10th to 90th percentile of past curves, from `est["history"]["seasons"]`), last season dotted, the target as a line, the next 14 days as a short dashed extension. | One chart reads at 6 feet |
-| G2 | Long view (`history_panel.py`): season-end chill bars since the 1980s with the variety's target line and the trend sentence. Works with whatever seasons `/history` returns. | Loads for both demos |
+| G2 | Long view, "Is chill declining here?" (`history_panel.py`): port Drew's climate-trend section from PR #3. Season-end chill bars from `/history` (back to the 1980s once B3 lands), the variety's target line, a trend line, and the plain trend sentence (`describe_trend`). Under it, the research caption (Zhang et al. 2021) and a short crop note. Crop notes live in `config.py` as `CROP_CONTEXT`, served by `/varieties`, written in chill portions (not chill hours), with every figure checked against its paper. | Loads for both demos; every on-screen figure has a checked source |
+| G5 | Stretch, after B5: show `est["frost"]` as a frost-hours metric and a 14-day frost line in `details.py`. | Shows only when `/estimate` returns a `frost` block |
 | G3 | Details (`details.py`): every measure with a one-line tooltip, the grower's temperature range (`est["chill"]["custom_range"]`), options to raise with a PCA with sources, the guardrail sentence, and the proof panel. | Every number has a plain explanation |
 | G4 | Data download: a button that downloads the season's daily chill as CSV. | File opens in Excel |
 

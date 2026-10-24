@@ -77,7 +77,10 @@ class EstimateResponse(Open):
     target: Target
     chill: ChillSoFar
     gdd: dict
-    history: dict = Field(description="seasons: [{season, at_date, next_14_days, curve}], percentiles")
+    history: dict = Field(description="seasons: [{season, at_date, next_14_days, curve}], percentiles, "
+                                      "band_low / band_high: per day since the chill start (like curve), "
+                                      "the past-winter range the verdict calls normal; null on days with "
+                                      "fewer than config.BAND_MIN_SEASONS winters")
     projection: dict
     neighbors: list[Neighbor]
     excluded: list[str]
@@ -127,6 +130,23 @@ class DecisionResponse(Open):
 class SeasonTotal(Open):
     season: str
     chill_portions: float
+    hours_missing: int = Field(
+        description="Hours inside this winter's estimate where no neighbor station had a reading")
+
+
+class SkippedSeason(Open):
+    season: str
+    reason: str = Field(description="Why this winter isn't counted, in plain words")
+
+
+class TrendPoint(Open):
+    season: str
+    chill_portions: float
+
+
+class TrendLine(Open):
+    start: TrendPoint = Field(description="The fitted straight line's value at the first season")
+    end: TrendPoint = Field(description="The fitted straight line's value at the last season")
 
 
 class HistoryResponse(Open):
@@ -135,3 +155,11 @@ class HistoryResponse(Open):
     seasons: list[SeasonTotal]
     trend_cp_per_decade: float | None
     source: str
+    trend_sentence: str = Field(description="One plain sentence about the trend, already worded; always present")
+    trend_direction: Literal["falling", "rising", "no clear change", "too few winters"] = Field(
+        description="falling or rising only when the confidence range of the slope (config.TREND_CONFIDENCE, "
+                    "95%) excludes zero")
+    trend_line: TrendLine | None = Field(
+        description="Fitted line at the first and last season; null if too few winters")
+    seasons_used: int
+    seasons_skipped: list[SkippedSeason] = Field(description="Winters not counted (nothing saved, or not finished)")

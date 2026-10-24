@@ -3,8 +3,10 @@ import os
 
 os.environ["DATA_SOURCE"] = "synthetic"
 
+import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import config, decision  # noqa: E402
 from app.main import app  # noqa: E402
 
 client = TestClient(app)
@@ -59,8 +61,11 @@ def test_estimate_has_glance_fields():
 
 
 def test_decision_pistachio():
-    r = client.get("/decision", params={"lat": 35.62, "lon": -119.69, "as_of": "2026-01-15",
-                                       "variety": "Kerman pistachio", "exclude": ["5"], "history_seasons": 4})
+    """The Kern demo pin (config.DEMO_ORCHARDS), with its hold-out hidden, mid-January."""
+    kern = config.DEMO_ORCHARDS["kern"]
+    r = client.get("/decision", params={"lat": kern["lat"], "lon": kern["lon"], "as_of": "2026-01-15",
+                                       "variety": kern["variety"], "exclude": [kern["holdout_station"]],
+                                       "history_seasons": 4})
     assert r.status_code == 200, r.text
     d = r.json()
     assert d["status"] in ("on_track", "watch", "at_risk", "done")
@@ -79,3 +84,34 @@ def test_history_has_trend():
     assert r.status_code == 200, r.text
     h = r.json()
     assert len(h["seasons"]) >= 5 and h["trend_cp_per_decade"] is not None
+
+
+def test_estimate_band_lines_up_with_the_curves_and_the_card():
+    """band_low / band_high: one value per day like the past curves, and the card's word matches today's band."""
+    r = client.get("/estimate", params={"lat": 39.61, "lon": -121.82, "as_of": "2026-02-01",
+                                       "exclude": ["12"], "history_seasons": 3})
+    b = r.json()
+    h, today, cp = b["history"], len(b["chill"]["curve"]) - 1, b["chill"]["chill_portions"]
+    assert len(h["band_low"]) == len(h["band_high"]) == max(len(s["curve"]) for s in h["seasons"])
+    low, high = h["band_low"][today], h["band_high"][today]
+    assert low <= high
+    if cp < low:
+        assert b["verdict"]["band"] == "low"
+    elif cp > high:
+        assert b["verdict"]["band"] == "high"
+    elif low < cp < high:
+        assert b["verdict"]["band"] == "normal"
+
+
+@pytest.mark.parametrize("as_of", ["2025-10-15", "2026-02-01"])
+def test_band_today_uses_the_cards_own_numbers(as_of):
+    """The card ranks 1-decimal numbers (at_date), so today's band edges must be the edges of those same numbers.
+
+    With 2-decimal curves, October could read HIGH on the card (now 1.0, past winters 1.0) while today sat
+    inside a band ending at 1.01.
+    """
+    b = client.get("/estimate", params={"lat": 39.61, "lon": -121.82, "as_of": as_of,
+                                       "exclude": ["12"], "history_seasons": 5}).json()
+    h, today = b["history"], len(b["chill"]["curve"]) - 1
+    expected = decision.history_band([[s["at_date"]["chill_portions"]] for s in h["seasons"]])
+    assert (h["band_low"][today], h["band_high"][today]) == (expected["band_low"][0], expected["band_high"][0])

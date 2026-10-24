@@ -1,27 +1,35 @@
 """Compare tab: this season vs. past seasons, and the next 14 days.  Owner: Frontend B."""
-from datetime import date
+from datetime import date, timedelta
 
 import plotly.graph_objects as go
 import streamlit as st
 
+# Hover text per point, e.g. "Oct 15: 12 chill portions", with the line's name ("This winter") beside it.
+HOVER = "%{x|%b %-d}: %{y:.0f} chill portions<extra>%{fullData.name}</extra>"
+
 
 def show(est: dict):
+    """Draw the Compare tab: two plain-word numbers, the season chart, and a key to read it."""
     ch, hist, proj = est["chill"], est["history"], est["projection"]
     p = hist["percentiles"].get("chill_portions", {})
     # "Chill so far" lives on the glance card above; repeating it here in other words confused readers.
     cp = ch["chill_portions"]
+    started = grower_date(ch["start"])
     a2, a3 = st.columns(2)
     if p:
         a2.metric("Compared with a typical year", vs_typical(cp - p["p50"]),
-                  help=f"A typical year has {p['p50']:.0f} by this date.")
+                  help=f"This winter: {cp:.0f} chill portions. A typical year has {p['p50']:.0f} "
+                       f"by this date. Both counted since {started}.")
     if "added" in proj:
         a3.metric("Next 14 days", f"about +{proj['added']['chill_portions']:.0f}",
-                  help="Chill portions likely to be added over the next two weeks.")
+                  help=f"Chill portions likely to be added over the next two weeks, from the weather "
+                       f"forecast. {est['target']['variety']} needs {est['target']['target_cp']:.0f} in all.")
 
     # displayModeBar off: no tiny toolbar to tap by accident on a phone.
     st.plotly_chart(build_chart(est), use_container_width=True, config={"displayModeBar": False})
-    st.caption("Shaded band: a normal year for this date. Below it the card says low, above it high. "
-               "Dotted line: last winter. Dashed line: the next 14 days, from the backend's forecast outlook.")
+    st.caption(f"Gray band: a normal year for this date. Below it the card says low, above it high. "
+               f"Dotted line: last winter. Dashed blue line: the next 14 days, from the weather forecast. "
+               f"Orange line: what {est['target']['variety']} needs. Counting started {started}.")
 
 
 def grower_date(iso: str) -> str:
@@ -31,48 +39,63 @@ def grower_date(iso: str) -> str:
 
 
 def vs_typical(diff: float) -> str:
-    """Show the gap to a typical year in words a grower reads at a glance, e.g. "3 less"."""
+    """Show the gap to a typical year in words a grower reads at a glance, e.g. "3 below usual"."""
     if round(diff) == 0:
         return "About the same"
-    return f"{abs(diff):.0f} {'less' if diff < 0 else 'more'}"
+    return f"{abs(diff):.0f} {'below' if diff < 0 else 'above'} usual"
+
+
+def season_dates(start_iso: str, n: int) -> list[date]:
+    """Calendar dates for the first n days of the season, so the chart reads "Oct 15", not "day 44".
+
+    Day 0 is the start date. Past winters are drawn on this winter's dates so they line up by date.
+    """
+    start = date.fromisoformat(start_iso)
+    return [start + timedelta(days=i) for i in range(n)]
 
 
 def build_chart(est: dict) -> go.Figure:
     """Build one chart: normal range, last winter, this winter, the target, and the next 14 days."""
     ch, hist, proj = est["chill"], est["history"], est["projection"]
     seasons = hist["seasons"]
+    start = ch["start"]
     fig = go.Figure()
 
     # The backend sends the normal band per day, drawn where the glance card's word changes,
     # so the chart and the card always agree. A day with too few past winters is None (a gap).
     low, high = hist.get("band_low") or [], hist.get("band_high") or []
     if any(v is not None for v in low):
-        days = list(range(len(low)))
+        days = season_dates(start, len(low))
         fig.add_trace(go.Scatter(x=days, y=high, mode="lines", line=dict(width=0), showlegend=False, hoverinfo="skip"))
         fig.add_trace(go.Scatter(x=days, y=low, mode="lines", line=dict(width=0), fill="tonexty",
-                                 fillcolor="rgba(120,120,120,0.25)", name="Normal range (most winters)",
+                                 fillcolor="rgba(120,120,120,0.25)", name="Normal range",
                                  hoverinfo="skip"))
 
     if seasons:
         last = max(seasons, key=lambda s: s["season"])  # season labels like "2024-25" sort by year
-        fig.add_trace(go.Scatter(y=last["curve"], mode="lines", name=f"Last winter ({last['season']})",
+        fig.add_trace(go.Scatter(x=season_dates(start, len(last["curve"])), y=last["curve"], mode="lines",
+                                 name=f"Last winter ({last['season']})", hovertemplate=HOVER,
                                  line=dict(color="#444444", width=2, dash="dot")))
 
-    fig.add_trace(go.Scatter(y=ch["curve"], mode="lines", name="This winter",
+    fig.add_trace(go.Scatter(x=season_dates(start, len(ch["curve"])), y=ch["curve"], mode="lines",
+                             name="This winter", hovertemplate=HOVER,
                              line=dict(color="#1f6f8b", width=4)))
 
     # Dashed extension: a straight line from today's total to the backend's 14-day outlook.
     added = proj.get("added", {}).get("chill_portions")
     if added is not None and ch["curve"]:
-        x0 = len(ch["curve"]) - 1
-        fig.add_trace(go.Scatter(x=[x0, x0 + proj.get("days", 14)], y=[ch["curve"][-1], ch["curve"][-1] + added],
-                                 mode="lines", name="Next 14 days (outlook)",
+        today = season_dates(start, len(ch["curve"]))[-1]
+        fig.add_trace(go.Scatter(x=[today, today + timedelta(days=proj.get("days", 14))],
+                                 y=[ch["curve"][-1], ch["curve"][-1] + added],
+                                 mode="lines", name="Next 14 days", hovertemplate=HOVER,
                                  line=dict(color="#1f6f8b", width=4, dash="dash")))
 
     t = est["target"]["target_cp"]
     fig.add_hline(y=t, line_dash="dash", line_color="#d55e00", line_width=3,
-                  annotation_text=f"{est['target']['variety']} needs {t:.0f}")
+                  annotation_text=f"{est['target']['variety']} needs {t:.0f}",
+                  annotation_position="top left")
+    # Legend under the chart: on a 375px phone a legend above it wraps over the lines.
     fig.update_layout(height=420, margin=dict(l=10, r=10, t=30, b=10),
-                      xaxis_title=f"Days since {grower_date(ch['start'])}", yaxis_title="Chill portions",
-                      legend=dict(orientation="h", y=1.12, x=0), font=dict(size=14))
+                      yaxis_title="Chill portions", xaxis=dict(tickformat="%b %-d"),
+                      legend=dict(orientation="h", yanchor="top", y=-0.12, x=0), font=dict(size=14))
     return fig

@@ -44,8 +44,8 @@ GDD_THRESHOLDS_C = {"almond": (5.0, 35.0), "walnut": (5.0, 35.0),
 NEIGHBORS = int(os.getenv("NEIGHBORS", 3))      # stations used for each estimate (5 was tried too)
 IDW_POWER = float(os.getenv("IDW_POWER", 2.0))
 # Temperature change per meter of elevation, °F/m. 0 = no elevation adjustment. The standard lapse
-# (6.5 °C/km ≈ 0.0117 °F/m) was tried and made no measurable difference over those winters (winter
-# valley inversions can make it wrong), so it is off.
+# (6.5 °C/km ≈ 0.0117 °F/m) was tried; Ada's rule picked "off" (typical miss 3.52 vs 3.63 at 3 neighbors,
+# a small margin; winter valley inversions can make a fixed lapse wrong).
 LAPSE_F_PER_M = float(os.getenv("LAPSE_F_PER_M", 0.0))
 
 # Which stations may be neighbors (interp.candidates). For each season, the app walks this list

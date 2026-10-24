@@ -139,3 +139,14 @@ def test_config_ships_the_setting_the_table_recommends(vt):
     md = (Path(__file__).resolve().parents[2] / "pitch" / "validation.md").read_text()
     recommended = md.split("## Recommended setting")[1].split("**")[1]
     assert recommended == shipped.name
+
+
+def test_a_setting_missing_a_winter_is_incomplete(vt):
+    """A setting counts as complete only if every one of the 19 hold-out winters got a row."""
+    rows = [{"setting": vt.PREVIOUS.name, "station": sid, "winter": str(y), "error_cp": 1.0}
+            for sid, years in vt.HOLDOUTS.items() for y in years]
+    uncached = {s: set() for s in vt.settings_grid()}
+    assert vt.score(rows, uncached)[vt.PREVIOUS]["complete"] is True
+    assert vt.score(rows[1:], uncached)[vt.PREVIOUS]["complete"] is False
+    other = vt.Setting(0.0, 3, *vt.CAPS_ON)
+    assert vt.score(rows, uncached)[other]["complete"] is False          # no rows at all

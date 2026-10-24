@@ -164,6 +164,15 @@ def run_grid(stations) -> tuple[list[dict], dict[Setting, set]]:
     return rows, uncached
 
 
+def score(rows: list[dict], uncached: dict[Setting, set]) -> dict[Setting, dict]:
+    """Each setting's typical miss over all its winters, and whether it is complete: nothing unsaved was
+    skipped, and every hold-out winter got a row."""
+    winters = sum(len(years) for years in HOLDOUTS.values())
+    return {s: {"typical_miss": summarize(errors_of(rows, s))["typical_miss"] if errors_of(rows, s) else math.inf,
+                "complete": not uncached[s] and len(errors_of(rows, s)) == winters}
+            for s in settings_grid()}
+
+
 def check_real_data() -> None:
     """Stop unless this run uses real CIMIS data, so a synthetic run never overwrites the pitch numbers."""
     if config.DATA_SOURCE != "cimis":
@@ -315,7 +324,8 @@ def write_md(path: Path, rows, uncached, scores, winner: Setting, note: str, sta
         "- With 3 neighbors, `scripts/warm_cache.py` saves 3 stations per winter. On a fresh machine, the 5-neighbor "
         "rows need `NEIGHBORS=5 python scripts/warm_cache.py` first, or they show as incomplete.",
         "- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 the made-up weather changes too: "
-        "the synthetic Kern demo moves from on track to at risk. Real data is not affected.", "",
+        "the synthetic Kern demo moves from on track to at risk. Real CIMIS readings don't depend on this setting; the real "
+        "estimates change as shown in the PR's before/after cards.", "",
         "## Numbers for the pitch", "", *pitch_numbers(rows, winner, stations), "",
     ]
     path.write_text("\n".join(lines))
@@ -326,8 +336,7 @@ def run() -> None:
     check_real_data()
     stations = data.get_stations()
     rows, uncached = run_grid(stations)
-    scores = {s: {"typical_miss": summarize(errors_of(rows, s))["typical_miss"], "complete": not uncached[s]}
-              for s in settings_grid()}
+    scores = score(rows, uncached)
     winner, note = pick_winner(scores)
     write_csv(rows)
     write_md(OUT_MD, rows, uncached, scores, winner, note, stations)

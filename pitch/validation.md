@@ -57,7 +57,7 @@ From the shipped setting. "Usually within X" from the typical miss alone would o
 ## Notes
 
 - With 3 neighbors, `scripts/warm_cache.py` saves 3 stations per winter. On a fresh machine, the 5-neighbor rows need `NEIGHBORS=5 python scripts/warm_cache.py` first, or they show as incomplete.
-- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 the made-up weather changes too: the synthetic Kern demo moves from on track to at risk. Real data is not affected.
+- Synthetic data (`data.synthetic_temp`) also uses `LAPSE_F_PER_M`, so with 0 the made-up weather changes too: the synthetic Kern demo moves from on track to at risk. Real CIMIS readings don't depend on this setting; the real estimates change as shown in the PR's before/after cards.
 
 ## Numbers for the pitch
 
